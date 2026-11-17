@@ -1,8 +1,6 @@
 # Chat avatars
 
-Recognized nicknames use the matching local portrait. Other nicknames, and any missing portrait, use the initial badge fallback.
-
-Portraits currently included: 14 of the 15 names below. Lionel Messi's portrait is not included yet; `lionel-messi.png` can be added later without changing the chat code.
+Recognized nicknames use the matching local portrait. Other nicknames use the initial badge.
 
 - zinedine-zidane.png
 - zico.png
@@ -10,7 +8,7 @@ Portraits currently included: 14 of the 15 names below. Lionel Messi's portrait 
 - cristiano-ronaldo.png
 - johan-cruyff.png
 - diego-maradona.png
-- lionel-messi.png (not yet included)
+- lionel-messi.png (user-provided photo crop)
 - andres-iniesta.png
 - thierry-henry.png
 - neymar.png
