@@ -232,10 +232,10 @@ ipcMain.handle("dpi:status", () => dpiStatus());
 ipcMain.handle("app:perf", () => PERF);
 
 // ---- link list from GitHub (sites.json): fixes broken links for everyone ----
-const DEFAULT_SITES_URL = "https://raw.githubusercontent.com/waterme1on7r-byte/football-arena/main/sites.json";
+const DEFAULT_SITES_URL = "https://raw.githubusercontent.com/waterme1on7r-byte/football-arena-macos/main/sites.json";
 const DEFAULT_ROOM = "football-arena-wtmljr-v1";
 const DEFAULT_SERVERS = ["wss://broker.hivemq.com:8884/mqtt", "wss://broker.emqx.io:8084/mqtt", "wss://test.mosquitto.org:8081/"];
-const MIRROR_URL = "https://cdn.jsdelivr.net/gh/waterme1on7r-byte/football-arena@main/sites.json";   // only used when GitHub itself does not answer
+const MIRROR_URL = "https://cdn.jsdelivr.net/gh/waterme1on7r-byte/football-arena-macos@main/sites.json";   // only used when GitHub itself does not answer
 const remoteFile = () => path.join(app.getPath("userData"), "remote.json");
 let remoteCache = {};   // { url, etag, data } : the last good sites.json, so the app can show it instantly and ask GitHub "changed?" (a tiny 304 reply)
 try { remoteCache = JSON.parse(fs.readFileSync(remoteFile(), "utf8")) || {}; } catch {}
