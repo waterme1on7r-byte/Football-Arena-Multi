@@ -10,8 +10,8 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
       - run: npm install
@@ -19,7 +19,7 @@ jobs:
       - if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         run: npm run dist
       - if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: football-arena-installer
           path: dist/*.exe
@@ -31,28 +31,35 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   macos:
     needs: build
-    runs-on: macos-latest
+    runs-on: macos-15-intel
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
-      - uses: actions/setup-go@v5
-        with:
-          go-version: stable
-      # Build the pinned upstream SpoofDPI release source for both Mac CPUs.
-      - name: Build SpoofDPI v1.5.5
+      # Use upstream's signed-off release binaries. Building from source with
+      # CGO disabled omits Darwin's pcap declarations and fails with undefined pcap* symbols.
+      - name: Fetch SpoofDPI v1.5.5 for both Mac CPUs
         shell: bash
         run: |
-          git clone --depth 1 --branch v1.5.5 https://github.com/xvzc/spoofdpi.git "$RUNNER_TEMP/spoofdpi"
           mkdir -p spoofdpi/x64 spoofdpi/arm64
-          (cd "$RUNNER_TEMP/spoofdpi" && CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath -o "$GITHUB_WORKSPACE/spoofdpi/x64/spoofdpi" ./cmd/spoofdpi)
-          (cd "$RUNNER_TEMP/spoofdpi" && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -o "$GITHUB_WORKSPACE/spoofdpi/arm64/spoofdpi" ./cmd/spoofdpi)
+          base="https://github.com/xvzc/spoofdpi/releases/download/v1.5.5"
+          curl -fL "$base/spoofdpi_1.5.5_darwin_x86_64.tar.gz" -o "$RUNNER_TEMP/spoofdpi-x64.tar.gz"
+          curl -fL "$base/spoofdpi_1.5.5_darwin_arm64.tar.gz" -o "$RUNNER_TEMP/spoofdpi-arm64.tar.gz"
+          mkdir -p "$RUNNER_TEMP/spoofdpi-x64" "$RUNNER_TEMP/spoofdpi-arm64"
+          tar -xzf "$RUNNER_TEMP/spoofdpi-x64.tar.gz" -C "$RUNNER_TEMP/spoofdpi-x64"
+          tar -xzf "$RUNNER_TEMP/spoofdpi-arm64.tar.gz" -C "$RUNNER_TEMP/spoofdpi-arm64"
+          x64bin="$(find "$RUNNER_TEMP/spoofdpi-x64" -type f -name spoofdpi -print -quit)"
+          arm64bin="$(find "$RUNNER_TEMP/spoofdpi-arm64" -type f -name spoofdpi -print -quit)"
+          test -n "$x64bin" && test -n "$arm64bin"
+          cp "$x64bin" spoofdpi/x64/spoofdpi
+          cp "$arm64bin" spoofdpi/arm64/spoofdpi
+          chmod +x spoofdpi/x64/spoofdpi spoofdpi/arm64/spoofdpi
       - run: npm install
       - if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         run: npm run dist:mac
       - if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: football-arena-macos
           path: dist/*.{dmg,zip}
