@@ -13,7 +13,8 @@
   <header>
     <div class="ttl"><span class="live"></span><b>CHAT</b><span id="online"></span></div>
     <button id="admBtn" title="Moderation" aria-label="Moderation" hidden>🛡</button>
-    <button id="nickBtn" title="Change nickname" aria-label="Change nickname">✎</button>
+    <button id="avatarBtn" class="avatarEditBtn" title="Edit avatar" aria-label="Edit avatar"><img id="headerAvatar" alt=""><span>✎</span></button>
+    <button id="nickBtn" title="Change nickname" aria-label="Change nickname">👤</button>
     <button id="min" title="Minimize" aria-label="Minimize">—</button>
   </header>
   <div id="status" hidden></div>
@@ -30,10 +31,19 @@
     <div class="card">
       <h3>Join the chat</h3>
       <p>Pick a nickname. Everyone watching can see it.</p>
+      <div class="joinAvatar"><img id="joinAvatarPreview" alt=""><button id="joinAvatarBtn" type="button">Choose avatar</button></div>
       <input id="nickIn" maxlength="20" placeholder="Nickname" aria-label="Nickname">
       <input id="pwIn" type="password" maxlength="100" placeholder="Password" aria-label="Password" autocomplete="off" hidden>
       <div class="err" id="nickErr"></div>
       <button id="nickOk" class="primary">Join</button>
+    </div>
+  </div>
+  <div id="avatarPicker" hidden>
+    <div class="card avatarCard">
+      <h3>Choose avatar</h3>
+      <p>Choose one of the football portraits. Your choice appears next to your chat messages.</p>
+      <div id="avatarGrid" role="listbox" aria-label="Football avatars"></div>
+      <button id="avatarClose" type="button">Close</button>
     </div>
   </div>
   <div id="adm" hidden>

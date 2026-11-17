@@ -21,10 +21,24 @@ const AVATARS = new Map([
   ["neymar", "neymar.png"], ["ronaldinho", "ronaldinho.png"], ["xavihernandez", "xavi-hernandez.png"],
   ["alexdesouza", "alex-de-souza.png"], ["ardaguler", "arda-guler.png"], ["marcoasensio", "marco-asensio.png"],
 ]);
-function avatarFor(name, userId) {
+const AVATAR_CHOICES = [
+  ["zinedine-zidane", "Zinedine Zidane", "zinedine-zidane.png"], ["zico", "Zico", "zico.png"],
+  ["ronaldo-nazario", "Ronaldo Nazário", "ronaldo-nazario.png"], ["cristiano-ronaldo", "Cristiano Ronaldo", "cristiano-ronaldo.png"],
+  ["johan-cruyff", "Johan Cruyff", "johan-cruyff.png"], ["diego-maradona", "Diego Maradona", "diego-maradona.png"],
+  ["lionel-messi", "Lionel Messi", "lionel-messi.png"], ["andres-iniesta", "Andrés Iniesta", "andres-iniesta.png"],
+  ["thierry-henry", "Thierry Henry", "thierry-henry.png"], ["neymar", "Neymar", "neymar.png"],
+  ["ronaldinho", "Ronaldinho", "ronaldinho.png"], ["xavi-hernandez", "Xavi Hernández", "xavi-hernandez.png"],
+  ["alex-de-souza", "Alex de Souza", "alex-de-souza.png"], ["arda-guler", "Arda Güler", "arda-guler.png"],
+  ["marco-asensio", "Marco Asensio", "marco-asensio.png"],
+].map(([id, name, file]) => ({ id, name, file }));
+const AVATAR_FILES = new Map(AVATAR_CHOICES.map(a => [a.id, a.file]));
+const randomAvatarId = () => AVATAR_CHOICES[Math.floor(Math.random() * AVATAR_CHOICES.length)].id;
+const stableAvatarId = userId => AVATAR_CHOICES[hue(userId) % AVATAR_CHOICES.length].id;
+let avatarId = "", avatarByUser = new Map();
+function avatarFor(name, userId, selectedId) {
   const initial = (String(name).match(/[\p{L}\p{N}]/u) || ["?"])[0].toLocaleUpperCase("tr");
   const avatar = el("div", "av", initial); avatar.style.setProperty("--h", hue(userId));
-  const file = AVATARS.get(avatarKey(name));
+  const file = AVATAR_FILES.get(selectedId) || AVATARS.get(avatarKey(name)) || AVATAR_FILES.get(stableAvatarId(userId));
   if (file) {
     const img = document.createElement("img"); img.src = "avatars/" + file; img.alt = "";
     img.onerror = () => { avatar.classList.remove("hasImage"); img.remove(); avatar.textContent = initial; };
@@ -86,6 +100,14 @@ class Mqtt {
 /* ---------- chat ---------- */
 let cid = store.get("cid", ""); if (!ID.test(cid)) { cid = rid(); store.set("cid", cid); }
 let nick = store.get("nick", "");
+const savedAvatarId = store.get("chatAvatarChoice", "");
+if (AVATAR_FILES.has(savedAvatarId)) avatarId = savedAvatarId;
+else {
+  try { avatarId = sessionStorage.getItem("fa-chat-random-avatar") || ""; } catch {}
+  if (!AVATAR_FILES.has(avatarId)) avatarId = randomAvatarId();
+  try { sessionStorage.setItem("fa-chat-random-avatar", avatarId); } catch {}
+}
+avatarByUser.set(cid, avatarId);
 let muted = new Set(store.get("muted", []));
 let isOpen = true, unread = 0, replyTo = null, lastSent = 0, mq = null, room = "", T = {};
 // chat protocol version: every message carries it ("v"). A client that meets a message from a newer version it cannot show
@@ -134,7 +156,7 @@ function render() {
   if (!shown.length) list.append(el("div", "empty", "No messages yet. Say hi to everyone watching 👋"));
   for (const m of shown) {
     const row = el("div", "msg" + (m.u === cid ? " me" : "") + (m.adm ? " isadm" : ""));
-    const av = avatarFor(m.n, m.u);
+    const av = avatarFor(m.n, m.u, avatarByUser.get(m.u) || m.a);
     const body = el("div", "body"), head = el("div", "head");
     head.append(el("span", "nm", m.n)); if (m.adm) head.append(el("span", "adm", "ADMIN")); head.append(el("span", "tm", timeText(m.ts)));
     body.append(head);
@@ -176,7 +198,8 @@ function cleanMsg(o) {
   let r = null;
   if (!unsupported && o.r && typeof o.r === "object" && typeof o.r.n === "string" && typeof o.r.t === "string") r = { n: noCtl(o.r.n).trim().slice(0, 20), t: noCtl(o.r.t).trim().slice(0, 100) };
   const g = !unsupported && typeof o.g === "string" && /^[A-Za-z0-9+/=]{80,100}$/.test(o.g) ? o.g : "";
-  return { i: o.i, u: o.u, n, t, ts: o.ts, r, g, v: Math.min(v, CHAT_V), ...(unsupported ? { unsupported: true } : {}) };
+  const a = typeof o.a === "string" && AVATAR_FILES.has(o.a) ? o.a : "";
+  return { i: o.i, u: o.u, n, t, ts: o.ts, r, g, a, v: Math.min(v, CHAT_V), ...(unsupported ? { unsupported: true } : {}) };
 }
 
 // the protected name is only accepted together with the admin's signature
@@ -251,6 +274,7 @@ async function onMessage(topic, bytes) {
   if (topic === T.m) {
     const m = cleanMsg(o); if (!m || m.u === cid || banned.has(m.u) || deleted.has(m.i) || !floodOk(m.u)) return;
     if (!(await vetAdmin(m))) return;
+    if (m.a) avatarByUser.set(m.u, m.a);
     peers.set(m.u, Date.now());
     if (add(m, true)) {
       render();
@@ -260,27 +284,39 @@ async function onMessage(topic, bytes) {
       }
     }
   } else if (topic === T.p) {
-    if (o && typeof o.u === "string" && ID.test(o.u) && !banned.has(o.u)) { peers.set(o.u, Date.now()); drawOnline(); }
+    if (o && typeof o.u === "string" && ID.test(o.u) && !banned.has(o.u)) {
+      if (typeof o.a === "string" && AVATAR_FILES.has(o.a) && avatarByUser.get(o.u) !== o.a) {
+        avatarByUser.set(o.u, o.a);
+        if (msgs.some(m => m.u === o.u)) render();
+      }
+      peers.set(o.u, Date.now()); drawOnline();
+    }
   } else if (topic === T.s) {      // someone just joined and asks for recent messages
     if (!o || typeof o.u !== "string" || !ID.test(o.u) || o.u === cid || banned.has(o.u)) return;
     peers.set(o.u, Date.now()); drawOnline();
     if (Math.random() < Math.min(1, 8 / Math.max(1, online() - 1))) setTimeout(presence, 100 + Math.random() * 600);   // say hello so the newcomer sees who is here
     if ((msgs.length || mod.raw) && Math.random() < Math.min(1, 3 / Math.max(1, online() - 1))) {
-      setTimeout(() => mq.pub(room + "/to/" + o.u, { mod: mod.raw || undefined, h: msgs.slice(-30).map(m => ({ i: m.i, u: m.u, n: m.n, t: m.t, ts: m.sts || m.ts, r: m.r, g: m.g || undefined, v: m.v || undefined })) }), 150 + Math.random() * 700);
+      setTimeout(() => mq.pub(room + "/to/" + o.u, { mod: mod.raw || undefined, h: msgs.slice(-30).map(m => ({ i: m.i, u: m.u, n: m.n, t: m.t, ts: m.sts || m.ts, r: m.r, g: m.g || undefined, a: m.a || undefined, v: m.v || undefined })) }), 150 + Math.random() * 700);
     }
   } else if (topic === T.to) {
     if (!o) return;
     if (o.mod) await acceptMod(o.mod);
     if (!Array.isArray(o.h)) return;
     let any = false;
-    for (const x of o.h.slice(0, 40)) { const m = cleanMsg(x); if (m && m.u !== cid && !banned.has(m.u) && !deleted.has(m.i) && await vetAdmin(m) && add(m, false)) any = true; }
+    for (const x of o.h.slice(0, 40)) {
+      const m = cleanMsg(x);
+      if (m && m.u !== cid && !banned.has(m.u) && !deleted.has(m.i) && await vetAdmin(m)) {
+        if (m.a) avatarByUser.set(m.u, m.a);
+        if (add(m, false)) any = true;
+      }
+    }
     if (any) render();
   } else if (topic === T.mod) {
     await acceptMod(o);
   }
 }
 
-function presence() { if (nick && mq) mq.pub(T.p, { u: cid, n: nick, ts: Date.now() }); }
+function presence() { if (nick && mq) mq.pub(T.p, { u: cid, n: nick, a: avatarId, ts: Date.now() }); }
 async function sendMessage() {
   const inp = $("#inp"), t = noCtl(inp.value).trim().slice(0, 300);
   if (!t || !nick || (banned.has(cid) && !isAdmin)) return;
@@ -288,15 +324,40 @@ async function sendMessage() {
   const now = Date.now();
   if (now - lastSent < 1200) return;
   if (!mq || !mq.up) { $("#status").hidden = false; $("#status").textContent = "Not connected yet. Try again in a moment."; return; }
-  const m = { i: rid(), u: cid, n: nick, t, ts: now, v: CHAT_V, ...(replyTo ? { r: replyTo } : {}) };
+  const m = { i: rid(), u: cid, n: nick, a: avatarId, t, ts: now, v: CHAT_V, ...(replyTo ? { r: replyTo } : {}) };
   if (isAdmin) { m.g = await FA.sign(sigText(m)); m.adm = true; m.sts = now; }
   const { adm, sts, ...wire } = m;
   mq.pub(T.m, wire); lastSent = now;
   add(m, true); inp.value = ""; clearReply(); render(); list.scrollTop = list.scrollHeight;
 }
+function drawAvatarControls() {
+  const src = "avatars/" + (AVATAR_FILES.get(avatarId) || AVATAR_CHOICES[0].file);
+  ["#headerAvatar", "#joinAvatarPreview"].forEach(id => { const img = $(id); if (img) img.src = src; });
+  const grid = $("#avatarGrid"); if (!grid) return;
+  grid.textContent = "";
+  for (const choice of AVATAR_CHOICES) {
+    const button = el("button", "avatarChoice"), img = document.createElement("img");
+    button.type = "button"; button.setAttribute("role", "option"); button.setAttribute("aria-selected", String(choice.id === avatarId));
+    button.setAttribute("aria-label", choice.name); button.title = choice.name;
+    if (choice.id === avatarId) button.classList.add("selected");
+    img.src = "avatars/" + choice.file; img.alt = "";
+    button.append(img, el("span", null, choice.name)); button.onclick = () => chooseAvatar(choice.id); grid.append(button);
+  }
+}
+function openAvatarPicker() { drawAvatarControls(); $("#avatarPicker").hidden = false; }
+function chooseAvatar(id) {
+  if (!AVATAR_FILES.has(id)) return;
+  avatarId = id; store.set("chatAvatarChoice", id);
+  try { sessionStorage.setItem("fa-chat-random-avatar", id); } catch {}
+  avatarByUser.set(cid, id); drawAvatarControls(); render(); presence();
+  $("#avatarPicker").hidden = true;
+}
 $("#send").addEventListener("submit", e => { e.preventDefault(); sendMessage(); });
 $("#min").onclick = () => hostApi.minimize();
-document.addEventListener("keydown", e => { if (e.key === "Escape") { if (!$("#cfm").hidden) closeCfm(false); else if (!$("#adm").hidden) $("#adm").hidden = true; else if (!$("#emoji").hidden) $("#emoji").hidden = true; else hostApi.minimize(); } });
+$("#avatarBtn").onclick = openAvatarPicker;
+$("#joinAvatarBtn").onclick = openAvatarPicker;
+$("#avatarClose").onclick = () => { $("#avatarPicker").hidden = true; };
+document.addEventListener("keydown", e => { if (e.key === "Escape") { if (!$("#cfm").hidden) closeCfm(false); else if (!$("#avatarPicker").hidden) $("#avatarPicker").hidden = true; else if (!$("#adm").hidden) $("#adm").hidden = true; else if (!$("#emoji").hidden) $("#emoji").hidden = true; else hostApi.minimize(); } });
 
 /* emoji */
 const EMOJI = "😀 😂 🤣 😍 😎 🤩 😢 😡 👍 👎 👏 🙏 💪 🔥 ⚽ 🥅 🏆 🎉 ❤️ 💛 💙 🤝 😱 🤔 🙌 😅 😬 😴 🤯 🥳 😭 👀".split(" ");
@@ -360,6 +421,7 @@ hostApi.onVisible(v => { isOpen = v; if (v) { unread = 0; hostApi.unread(0); lis
   const servers = cfg.servers && cfg.servers.length ? cfg.servers : ["wss://broker.hivemq.com:8884/mqtt"];
   T = { m: room + "/m", p: room + "/p", s: room + "/s", mod: room + "/mod", to: room + "/to/" + cid };
   await acceptMod(store.get("mod", null));
+  drawAvatarControls();
   render(); drawBanState();
   if (!nick) askNick(false); else if (reserved(nick)) askNick(true); else $("#inp").focus();
   if (nick) hostApi.nick(nick);   // let Settings show the nickname
