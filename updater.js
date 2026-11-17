@@ -55,7 +55,7 @@ function installNow() {
 function openReleasePage() {
   if (process.platform !== "darwin") return false;
   const { shell } = require("electron");
-  return shell.openExternal("https://github.com/waterme1on7r-byte/football-arena-macos/releases/latest").then(() => true).catch(() => false);
+  return shell.openExternal("https://github.com/waterme1on7r-byte/football-arena-multi/releases/latest").then(() => true).catch(() => false);
 }
 
 module.exports = { init, check, start, installNow, openReleasePage, installing: () => installing, status: () => state, supported };
