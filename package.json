@@ -1,0 +1,84 @@
+{
+  "name": "football-arena",
+  "productName": "Football Arena",
+  "version": "1.8.0",
+  "description": "Football Arena",
+  "main": "main.js",
+  "author": "Football Arena",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win --x64 --publish never",
+    "release": "electron-builder --win --x64 --publish always",
+    "dist:mac": "electron-builder --mac --x64 --arm64 --publish never",
+    "release:mac": "electron-builder --mac --x64 --arm64 --publish always"
+  },
+  "devDependencies": {
+    "electron": "^35.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "app.footballarena.desktop",
+    "productName": "Football Arena",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "chatpreload.js",
+      "adblock.js",
+      "adskip.js",
+      "dpi.js",
+      "remote.js",
+      "updater.js",
+      "settings.js",
+      "renderer/**/*",
+      "build/icon.ico"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "requestedExecutionLevel": "requireAdministrator"
+    },
+    "mac": {
+      "category": "public.app-category.sports",
+      "target": ["dmg", "zip"],
+      "minimumSystemVersion": "11.0.0"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    },
+    "extraResources": [
+      {
+        "from": "goodbyedpi",
+        "to": "goodbyedpi"
+      },
+      {
+        "from": "spoofdpi",
+        "to": "spoofdpi"
+      }
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "waterme1on7r-byte",
+        "repo": "football-arena",
+        "releaseType": "release"
+      }
+    ]
+  },
+  "dependencies": {
+    "@ghostery/adblocker-electron": "^2.0.0",
+    "electron-updater": "^6.3.9"
+  }
+}

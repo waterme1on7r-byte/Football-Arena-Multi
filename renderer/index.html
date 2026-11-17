@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Football Arena</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@800;900&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="brand">
+    <svg viewBox="0 0 48 48" aria-hidden="true">
+      <ellipse cx="24" cy="24" rx="22" ry="17" fill="none" stroke="#f5c451" stroke-width="3"/>
+      <rect x="11" y="15" width="26" height="18" rx="3" fill="none" stroke="#e9edf2" stroke-width="1.6"/>
+      <line x1="24" y1="15" x2="24" y2="33" stroke="#e9edf2" stroke-width="1.6"/>
+      <circle cx="24" cy="24" r="4.5" fill="none" stroke="#e9edf2" stroke-width="1.6"/>
+    </svg>
+    <h1>Football Arena</h1>
+  </div>
+  <div class="tools">
+    <div class="dpiWrap" id="dpiWrap" hidden>
+      <button id="dpi" class="dpi" data-state="starting" title="GoodbyeDPI is starting…" aria-label="GoodbyeDPI status" aria-haspopup="menu" aria-expanded="false"><span class="light"></span><span>DPI</span></button>
+      <div class="dpiMenu" id="dpiMenu" role="menu" hidden>
+        <div class="in">
+          <button id="dpiToggle" class="ib" role="menuitem" data-state="off" title="Turn on" aria-label="Turn on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v9"/><path d="M6.3 6.8a8 8 0 1011.4 0"/></svg></button>
+          <button id="dpiRestart" class="ib" role="menuitem" title="Restart" aria-label="Restart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 10-2.3 6.1"/><path d="M20 4v7h-7"/></svg></button>
+        </div>
+      </div>
+    </div>
+    <div class="seg" id="layout" role="group" aria-label="Layout">
+      <button data-l="0" aria-pressed="true">Auto</button><button data-l="1">1</button><button data-l="2">2</button><button data-l="3">3</button><button data-l="4">4</button>
+    </div>
+    <button id="closeAll">Close all</button>
+    <button id="settingsBtn" class="gear" aria-haspopup="dialog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 01-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.9.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H3a2 2 0 010-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3H9a1.7 1.7 0 001-1.5V3a2 2 0 014 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9V9a1.7 1.7 0 001.5 1H21a2 2 0 010 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg><span>Settings</span></button>
+    <button class="primary" id="add">Add site</button>
+  </div>
+</header>
+<nav class="navrow" aria-label="Your sites">
+  <div id="sites"></div>
+  <button id="quickBtn" class="qbtn" aria-haspopup="true" aria-expanded="false">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9z"/></svg>
+    <span>Quick access</span><span class="live"></span><span class="badge" id="qCount">0</span>
+    <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+  </button>
+</nav>
+<main id="stage"></main>
+<footer class="foot">
+  <div class="fl">
+    <button id="hlt" class="upd hlt" title="Check which site links are working"><span class="ic">♥</span><span id="hltTxt">Health</span></button>
+  </div>
+  <div class="sig" aria-label="WTMLJR">WTMLJR</div>
+  <button id="chatBtn" class="chatBtn" aria-label="Chat" aria-pressed="false" title="Chat">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 01-11.6 7.1L3 20.5l1.5-4.9A8 8 0 1121 12z"/></svg>
+    <span id="chatBadge" class="cbadge" hidden>0</span>
+  </button>
+</footer>
+<div id="lock" hidden>
+  <div class="lcard">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>
+    <h2>Football Arena</h2>
+    <p>Enter the 4-digit passcode</p>
+    <input id="lockIn" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" aria-label="Passcode">
+    <div class="lerr" id="lockErr" aria-live="polite"></div>
+  </div>
+</div>
+<div id="block" hidden>
+  <div class="lcard">
+    <h2>Update needed</h2>
+    <p id="blockTxt">This version of Football Arena can no longer be used.</p>
+    <div class="row" style="justify-content:center"><button class="primary" id="blockBtn" type="button">Check for updates</button></div>
+    <div class="lerr" id="blockSt" aria-live="polite"></div>
+  </div>
+</div>
+<dialog id="setDlg" class="sdlg" aria-labelledby="setTitle">
+  <div class="shead"><h2 id="setTitle">Settings</h2><button type="button" id="setClose" class="x" aria-label="Close settings">✕</button></div>
+  <div class="sbody">
+    <nav class="stabs" id="setTabs" role="tablist" aria-label="Settings sections"></nav>
+    <div class="spanel" id="setPanel" role="tabpanel"></div>
+  </div>
+</dialog>
+<dialog id="blDlg" class="sdlg blDlg" aria-labelledby="blTitle">
+  <h2 id="blTitle">Blocklist</h2>
+  <p class="hint">One entry per line. A domain blocks that site and everything under it; any other text blocks every address that contains it. Lines starting with # are ignored. Saved changes apply at once.</p>
+  <textarea id="blText" spellcheck="false" aria-label="blocklist.txt"></textarea>
+  <div class="row"><button type="button" id="blCancel">Cancel</button><button type="button" class="primary" id="blSave">Save</button></div>
+</dialog>
+<dialog id="msgDlg">
+  <h2 id="msgTitle"></h2>
+  <p id="msgText"></p>
+  <div class="row"><button type="button" id="msgNo">Cancel</button><button type="button" class="primary" id="msgYes">OK</button></div>
+</dialog>
+<dialog id="dlg">
+  <form method="dialog" id="form">
+    <h2 id="dlgTitle">Add site</h2>
+    <label>Name<input type="text" id="name" required maxlength="40" autocomplete="off"></label>
+    <label>URL<input type="text" id="url" required placeholder="https://" autocomplete="off"></label>
+    <div class="row"><button type="button" class="danger" id="del" hidden>Delete</button><button type="button" id="cancel">Cancel</button><button class="primary" type="submit">Save</button></div>
+  </form>
+</dialog>
+<script src="app.js"></script>
+<script src="settings.js"></script>
+</body>
+</html>

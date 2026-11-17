@@ -1,0 +1,9 @@
+Copy the two folders "x86" and "x86_64" from your GoodbyeDPI download (the ones next to turkey_dnsredir.cmd)
+into THIS folder, so that these files exist:
+
+  goodbyedpi/x86_64/goodbyedpi.exe
+  goodbyedpi/x86_64/WinDivert.dll
+  goodbyedpi/x86_64/WinDivert64.sys
+  goodbyedpi/x86/goodbyedpi.exe        (and its WinDivert files)
+
+Keep the license files that come with the download. Without these folders the app still works, just without GoodbyeDPI.

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src data:; connect-src wss: ws:">
+<meta name="color-scheme" content="dark">
+<title>Chat</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@800;900&display=swap">
+<link rel="stylesheet" href="chat.css">
+</head>
+<body>
+<div id="win">
+  <header>
+    <div class="ttl"><span class="live"></span><b>CHAT</b><span id="online"></span></div>
+    <button id="admBtn" title="Moderation" aria-label="Moderation" hidden>🛡</button>
+    <button id="nickBtn" title="Change nickname" aria-label="Change nickname">✎</button>
+    <button id="min" title="Minimize" aria-label="Minimize">—</button>
+  </header>
+  <div id="status" hidden></div>
+  <div id="muteBar" hidden><span id="muteTxt"></span><button id="unmute">Unmute all</button></div>
+  <div id="list" aria-live="polite"></div>
+  <div id="reply" hidden><div><b></b><span></span></div><button id="replyX" aria-label="Cancel reply">✕</button></div>
+  <form id="send" autocomplete="off">
+    <button type="button" id="emo" aria-label="Emoji">☺</button>
+    <input id="inp" maxlength="300" placeholder="Write a message…" aria-label="Message">
+    <button type="submit" id="go" aria-label="Send">➤</button>
+  </form>
+  <div id="emoji" hidden></div>
+  <div id="nick">
+    <div class="card">
+      <h3>Join the chat</h3>
+      <p>Pick a nickname. Everyone watching can see it.</p>
+      <input id="nickIn" maxlength="20" placeholder="Nickname" aria-label="Nickname">
+      <input id="pwIn" type="password" maxlength="100" placeholder="Password" aria-label="Password" autocomplete="off" hidden>
+      <div class="err" id="nickErr"></div>
+      <button id="nickOk" class="primary">Join</button>
+    </div>
+  </div>
+  <div id="adm" hidden>
+    <div class="card">
+      <h3>Banned</h3>
+      <p>Everyone listed here cannot write and nobody sees their messages.</p>
+      <div id="admList"></div>
+      <button id="admClose" class="primary">Close</button>
+    </div>
+  </div>
+  <div id="cfm" hidden>
+    <div class="card">
+      <h3 id="cfmT"></h3>
+      <p id="cfmP"></p>
+      <div class="two"><button id="cfmNo" type="button">Cancel</button><button id="cfmYes" type="button" class="primary danger">OK</button></div>
+    </div>
+  </div>
+</div>
+<script src="adminkey.js"></script>
+<script src="chat.js"></script>
+</body>
+</html>
