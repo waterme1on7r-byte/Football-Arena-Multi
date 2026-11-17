@@ -1,0 +1,62 @@
+name: Build Windows installer
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      # Normal run (push to main / manual): just build the installer, nothing is published.
+      - if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        run: npm run dist
+      - if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: football-arena-installer
+          path: dist/*.exe
+      # Release run (a tag like v1.8.0 that matches "version" in package.json): builds AND publishes the GitHub Release
+      # (installer + latest.yml). Installed apps find it, download it in the background and offer "Restart now".
+      - if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        run: npm run release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  macos:
+    needs: build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      # Build the pinned upstream SpoofDPI release source for both Mac CPUs.
+      - name: Build SpoofDPI v1.5.5
+        shell: bash
+        run: |
+          git clone --depth 1 --branch v1.5.5 https://github.com/xvzc/spoofdpi.git "$RUNNER_TEMP/spoofdpi"
+          mkdir -p spoofdpi/x64 spoofdpi/arm64
+          (cd "$RUNNER_TEMP/spoofdpi" && CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath -o "$GITHUB_WORKSPACE/spoofdpi/x64/spoofdpi" ./cmd/spoofdpi)
+          (cd "$RUNNER_TEMP/spoofdpi" && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -o "$GITHUB_WORKSPACE/spoofdpi/arm64/spoofdpi" ./cmd/spoofdpi)
+      - run: npm install
+      - if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        run: npm run dist:mac
+      - if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: football-arena-macos
+          path: dist/*.{dmg,zip}
+      - if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        run: npm run release:mac
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
