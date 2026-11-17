@@ -13,6 +13,25 @@ const rid = () => {
 const ID = /^[\w-]{6,40}$/;
 const noCtl = s => String(s).replace(/[\u0000-\u001f\u007f]/g, " ");
 const hue = s => [...String(s)].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7) % 360;
+const avatarKey = s => String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+const AVATARS = new Map([
+  ["zinedinezidane", "zinedine-zidane.png"], ["zico", "zico.png"], ["ronaldo", "ronaldo-nazario.png"],
+  ["cristianoronaldo", "cristiano-ronaldo.png"], ["johancruyff", "johan-cruyff.png"], ["diegomaradona", "diego-maradona.png"],
+  ["lionelmessi", "lionel-messi.png"], ["andresiniesta", "andres-iniesta.png"], ["thierryhenry", "thierry-henry.png"],
+  ["neymar", "neymar.png"], ["ronaldinho", "ronaldinho.png"], ["xavihernandez", "xavi-hernandez.png"],
+  ["alexdesouza", "alex-de-souza.png"], ["ardaguler", "arda-guler.png"], ["marcoasensio", "marco-asensio.png"],
+]);
+function avatarFor(name, userId) {
+  const initial = (String(name).match(/[\p{L}\p{N}]/u) || ["?"])[0].toLocaleUpperCase("tr");
+  const avatar = el("div", "av", initial); avatar.style.setProperty("--h", hue(userId));
+  const file = AVATARS.get(avatarKey(name));
+  if (file) {
+    const img = document.createElement("img"); img.src = "avatars/" + file; img.alt = "";
+    img.onerror = () => { avatar.classList.remove("hasImage"); img.remove(); avatar.textContent = initial; };
+    avatar.textContent = ""; avatar.classList.add("hasImage"); avatar.append(img);
+  }
+  return avatar;
+}
 const FA = window.FA_ADMIN || { configured: () => false, unlock: async () => false, unlocked: () => false, lock() {}, sign: async () => "", verify: async () => false };
 const hostApi = Object.assign({ config: async () => ({}), minimize() {}, unread() {}, onVisible() {}, onSettings() {}, onNick() {}, onUnban() {}, nick() {}, admin() {} }, window.host || {});
 
@@ -115,7 +134,7 @@ function render() {
   if (!shown.length) list.append(el("div", "empty", "No messages yet. Say hi to everyone watching 👋"));
   for (const m of shown) {
     const row = el("div", "msg" + (m.u === cid ? " me" : "") + (m.adm ? " isadm" : ""));
-    const av = el("div", "av", (m.n.match(/[\p{L}\p{N}]/u) || ["?"])[0].toLocaleUpperCase("tr")); av.style.setProperty("--h", hue(m.u));
+    const av = avatarFor(m.n, m.u);
     const body = el("div", "body"), head = el("div", "head");
     head.append(el("span", "nm", m.n)); if (m.adm) head.append(el("span", "adm", "ADMIN")); head.append(el("span", "tm", timeText(m.ts)));
     body.append(head);
