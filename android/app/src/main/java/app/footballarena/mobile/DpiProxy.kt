@@ -8,6 +8,7 @@ import java.net.Socket
 import java.util.concurrent.Executors
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Semaphore
+import java.util.concurrent.atomic.AtomicInteger
 
 /** App-local CONNECT tunnel. TLS stays encrypted; no certificates or interception. */
 class DpiProxy(private val fragmentSize: Int) {
@@ -16,6 +17,11 @@ class DpiProxy(private val fragmentSize: Int) {
     private val slots = Semaphore(32)
     @Volatile private var listener: ServerSocket? = null
     @Volatile var lastError: String? = null
+        private set
+    val connections = AtomicInteger()
+    val handshakes = AtomicInteger()
+    val failures = AtomicInteger()
+    @Volatile var lastHost = "No traffic yet"
         private set
 
     fun start(): Int {
@@ -27,7 +33,7 @@ class DpiProxy(private val fragmentSize: Int) {
                     val client = server.accept()
                     if (!slots.tryAcquire()) { client.close(); continue }
                     sockets.add(client)
-                    pool.execute { try { tunnel(client) } catch (e: Exception) { lastError = e.message?.take(120) } finally { sockets.remove(client); client.close(); slots.release() } }
+                    pool.execute { try { tunnel(client) } catch (e: Exception) { failures.incrementAndGet(); lastError = e.message?.take(120) } finally { sockets.remove(client); client.close(); slots.release() } }
                 } catch (_: Exception) { break }
             }
         }
@@ -50,6 +56,7 @@ class DpiProxy(private val fragmentSize: Int) {
         val split = authority.lastIndexOf(':')
         if (split < 1 || authority.substring(split + 1) != "443") return
         val host = authority.substring(0, split).removeSurrounding("[", "]")
+        connections.incrementAndGet(); lastHost = host
         val addresses = InetAddress.getAllByName(host)
         // Never let an untrusted page use the tunnel to reach local network services.
         val address = addresses.firstOrNull { !it.isAnyLocalAddress && !it.isLoopbackAddress && !it.isLinkLocalAddress && !it.isSiteLocalAddress && !it.isMulticastAddress } ?: return
@@ -70,12 +77,15 @@ class DpiProxy(private val fragmentSize: Int) {
             read = 5
             while (read < record.size) { val n = input.read(record, read, record.size - read); if (n < 0) return; read += n }
             val output = remote.getOutputStream()
-            var offset = 0
+            var offset = 5
             while (offset < record.size) {
                 val n = minOf(fragmentSize, record.size - offset)
+                // Separate TLS records, not merely socket writes which TCP can coalesce.
+                output.write(byteArrayOf(head[0], head[1], head[2], (n shr 8).toByte(), n.toByte()))
                 output.write(record, offset, n); output.flush(); offset += n
                 if (offset < record.size) Thread.sleep(2)
             }
+            handshakes.incrementAndGet()
             client.soTimeout = 0
             pool.execute { try { remote.getInputStream().copyTo(client.getOutputStream()) } catch (_: Exception) {} finally { client.close(); remote.close() } }
             try { input.copyTo(output) } finally { remote.close() }

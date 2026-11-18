@@ -138,16 +138,15 @@ class MainActivity : Activity() {
             view.setPadding(bars.left, bars.top, bars.right, bars.bottom); insets
         }
         val toolbar = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(14), dp(8), dp(10), dp(8)); setBackgroundColor(panel) }
-        title = TextView(this).apply { text = "FOOTBALL ARENA"; setTextColor(gold); textSize = if (leanback) 23f else 18f; typeface = Typeface.DEFAULT_BOLD; isFocusable = true }
+        title = TextView(this).apply { text = "◉  FOOTBALL ARENA"; gravity = Gravity.CENTER_VERTICAL; setTextColor(gold); textSize = if (leanback) 28f else 22f; typeface = Typeface.create("sans-serif-condensed", Typeface.BOLD) }
         toolbar.addView(title, LinearLayout.LayoutParams(0, dp(48), 1f))
+        toolbar.addView(button("⚙") { settingsDialog() }.apply { contentDescription = "Settings" })
         root.addView(toolbar)
         val tools = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         dpiButton = button("DPI · Off") { dpiMenu() }
         tools.addView(dpiButton)
-        tools.addView(button("Auto") { setLayout(0) })
-        for (n in 1..4) tools.addView(button(n.toString()) { setLayout(n) })
+        tools.addView(button("Layout ▾") { AlertDialog.Builder(this).setTitle("Layout").setSingleChoiceItems(arrayOf("Auto", "1 pane", "2 panes", "3 panes", "4 panes"), layoutCount) { d, n -> setLayout(n); d.dismiss() }.show() })
         tools.addView(button("Close all") { pages.keys.toList().forEach { selectedKey = it; closePane() } })
-        tools.addView(button("Settings") { settingsDialog() })
         tools.addView(button("Add site", true) { addSite() })
         root.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(tools) })
         val scroll = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; setBackgroundColor(panel); isFocusable = false }
@@ -215,6 +214,7 @@ class MainActivity : Activity() {
         listBar.removeAllViews()
         sites.filter { !it.quick }.forEach { s ->
             val b = button(s.name, s.id == selectedKey) { openSite(s) }
+            b.background = controlBackground(s.id == selectedKey, true)
             b.contentDescription = "Open ${s.name}"
             b.setOnLongClickListener { editSite(s); true }
             listBar.addView(b)
@@ -276,7 +276,7 @@ class MainActivity : Activity() {
             val pane = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(panel) }
             val controls = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
             controls.addView(button(pageSites[key]?.name ?: "Page", key == selectedKey) { selectedKey = key; browser = page; renderSiteBar(); applyAudio() })
-            controls.addView(button("Main", true) { mainPane = if (mainPane == key) "" else key; renderPages() })
+            controls.addView(button("▣", mainPane == key) { mainPane = if (mainPane == key) "" else key; renderPages() }.apply { contentDescription = "Toggle main pane" })
             controls.addView(button("♫") { selectedKey = key; browser = page; volumeDialog(key) })
             controls.addView(button("↻") { page.reload() })
             controls.addView(button("×") { selectedKey = key; closePane() })
@@ -304,10 +304,18 @@ class MainActivity : Activity() {
 
     private fun button(label: String, primary: Boolean = false, action: (View) -> Unit): Button = Button(this).apply {
         text = label; isAllCaps = false; textSize = if (leanback) 17f else 14f; setTextColor(if (primary) bg else this@MainActivity.text)
-        setBackgroundTintList(android.content.res.ColorStateList.valueOf(if (primary) gold else Color.rgb(35, 47, 61)))
+        background = controlBackground(primary)
         minHeight = dp(if (leanback) 50 else 42); minimumHeight = minHeight; minWidth = dp(if (leanback) 72 else 48)
         isFocusable = true; setOnClickListener { action(it) }; setPadding(dp(10), 0, dp(10), 0)
         val lp = LinearLayout.LayoutParams(-2, dp(if (leanback) 50 else 42)); lp.marginStart = dp(4); lp.marginEnd = dp(4); layoutParams = lp
+    }
+    private fun controlBackground(primary: Boolean, pill: Boolean = false): android.graphics.drawable.StateListDrawable {
+        fun shape(fill: Int, stroke: Int) = android.graphics.drawable.GradientDrawable().apply { setColor(fill); cornerRadius = dp(if (pill) 24 else 8).toFloat(); setStroke(dp(1), stroke) }
+        return android.graphics.drawable.StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_focused), shape(if (primary) gold else Color.rgb(41, 49, 61), gold))
+            addState(intArrayOf(android.R.attr.state_pressed), shape(if (primary) gold else Color.rgb(41, 49, 61), gold))
+            addState(intArrayOf(), shape(if (primary) gold else panel, if (primary) gold else Color.rgb(34, 48, 66)))
+        }
     }
 
     private fun showMenu(anchor: View) {
@@ -426,8 +434,10 @@ class MainActivity : Activity() {
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private fun dpiMenu() {
+        val p = dpiProxy
         AlertDialog.Builder(this).setTitle("DPI bypass · $dpiState")
-            .setItems(arrayOf(if (dpiProxy == null) "Turn on" else "Turn off", "Restart", "Option 1 · 8-byte fragments", "Option 2 · 32-byte fragments", "Option 3 · 64-byte fragments")) { _, n ->
+            .setItems(arrayOf(if (dpiProxy == null) "Turn on" else "Turn off", "Restart", "Option 1 · 8-byte fragments", "Option 2 · 32-byte fragments", "Option 3 · 64-byte fragments", "Diagnostics · ${p?.connections?.get() ?: 0} routed connections")) { _, n ->
+                if (n == 5) { AlertDialog.Builder(this).setTitle("DPI diagnostics").setMessage("App HTTPS traffic only. Other apps and Android DNS are not routed.\n\nConnections: ${p?.connections?.get() ?: 0}\nFragmented handshakes sent: ${p?.handshakes?.get() ?: 0}\nErrors: ${p?.failures?.get() ?: 0}\nLast host: ${p?.lastHost ?: "None"}\nLast error: ${p?.lastError ?: "None"}\n\nThese counts verify routing and transmission, not successful bypass. If counts stay zero after a page reload, no HTTPS traffic reached this proxy.").setPositiveButton("Close", null).show(); return@setItems }
                 if (n >= 2) prefs.edit().putInt("dpiFragment", listOf(8, 32, 64)[n - 2]).putBoolean("dpi", true).apply()
                 else prefs.edit().putBoolean("dpi", if (n == 1) true else dpiProxy == null).apply()
                 updateDpi(true)
@@ -444,9 +454,9 @@ class MainActivity : Activity() {
             try {
                 val proxy = DpiProxy(prefs.getInt("dpiFragment", 32).coerceIn(8, 64))
                 val port = proxy.start(); dpiProxy = proxy
-                val config = ProxyConfig.Builder().addProxyRule("http://127.0.0.1:$port", "https").addDirect().build()
+                val config = ProxyConfig.Builder().addProxyRule("http://127.0.0.1:$port", "https").build()
                 ProxyController.getInstance().setProxyOverride(config, executor) {
-                    dpiState = "On"; dpiButton.text = "DPI · On"
+                    dpiState = "Proxy ready"; dpiButton.text = "DPI · Ready"
                     if (reload) pages.values.forEach { it.reload() }
                 }
             } catch (e: Exception) { dpiProxy?.stop(); dpiProxy = null; dpiState = "Failed"; dpiButton.text = "DPI · Failed"; toast(e.message ?: "Could not start DPI bypass") }
@@ -464,15 +474,70 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this).setTitle("Sound").setView(box).setPositiveButton("Done", null).show()
     }
     private fun settingsDialog() {
-        val sections = arrayOf("App", "Sound & Video", "Links", "Network")
-        AlertDialog.Builder(this).setTitle("Settings").setItems(sections) { _, section ->
-            when (section) {
-                0 -> showMenu(title)
-                1 -> AlertDialog.Builder(this).setTitle("Sound & Video").setMultiChoiceItems(arrayOf("Remember last page and layout", "Only focused pane plays sound"), booleanArrayOf(prefs.getBoolean("restore", true), prefs.getBoolean("focusAudio", false))) { _, i, on -> prefs.edit().putBoolean(if (i == 0) "restore" else "focusAudio", on).apply(); applyAudio() }.setPositiveButton("Done", null).show()
-                2 -> refreshLinks(true)
-                3 -> AlertDialog.Builder(this).setTitle("Network").setItems(arrayOf("DPI bypass · $dpiState", "Ad blocking and auto-skip")) { _, i -> if (i == 0) dpiMenu() else showMenu(title) }.setPositiveButton("Done", null).show()
+        val dialog = android.app.Dialog(this)
+        val shell = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(16), dp(18), dp(12)); setBackgroundColor(bg) }
+        val head = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        head.addView(TextView(this).apply { text = "Settings"; textSize = 26f; setTextColor(this@MainActivity.text); typeface = Typeface.DEFAULT_BOLD }, LinearLayout.LayoutParams(0, dp(58), 1f))
+        head.addView(button("Close") { dialog.dismiss() }); shell.addView(head)
+        val tabs = LinearLayout(this)
+        shell.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(tabs) })
+        val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, dp(20), 0, dp(10)) }
+        shell.addView(ScrollView(this).apply { addView(content) }, LinearLayout.LayoutParams(-1, 0, 1f))
+        fun heading(label: String, description: String) {
+            content.addView(TextView(this).apply { text = label; textSize = 22f; setTextColor(gold); setPadding(0, 0, 0, dp(6)) })
+            content.addView(TextView(this).apply { text = description; textSize = 14f; setTextColor(Color.rgb(134,150,168)); setPadding(0, 0, 0, dp(22)) })
+        }
+        fun row(label: String, description: String, key: String? = null, default: Boolean = false, action: (() -> Unit)? = null) {
+            val row = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(14), dp(14), dp(10), dp(14)); background = controlBackground(false) }
+            val labels = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 0, dp(10), 0) }
+            labels.addView(TextView(this).apply { text = label; textSize = 16f; setTextColor(this@MainActivity.text) })
+            labels.addView(TextView(this).apply { text = description; textSize = 13f; setPadding(0, dp(5), 0, 0); setTextColor(Color.rgb(134,150,168)) })
+            row.addView(labels, LinearLayout.LayoutParams(0, -2, 1f))
+            if (key != null) row.addView(Switch(this).apply {
+                contentDescription = label; isChecked = prefs.getBoolean(key, default)
+                setOnCheckedChangeListener { _, on ->
+                    prefs.edit().putBoolean(key, on).apply()
+                    if (key == "dpi") updateDpi(true)
+                    if (key == "focusAudio") applyAudio()
+                    if (key == "autoskip") pages.values.forEach { it.reload() }
+                }
+            }) else row.addView(button("Open") { action?.invoke() })
+            content.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
+        }
+        fun section(n: Int) {
+            content.removeAllViews()
+            when (n) {
+                0 -> {
+                    heading("App", "Football Arena · Android preview 1.8.4")
+                    row("Restore session", "Remember the last page and layout.", "restore", true)
+                    row("Passcode", "Ask for a four-digit code when the app starts.", action = { changePass() })
+                    row("Export sites", "Save a JSON file compatible with the desktop app.", action = { documentPicker(true) })
+                    row("Import sites", "Add sites from a saved JSON file.", action = { documentPicker(false) })
+                }
+                1 -> {
+                    heading("Sound & Video", "Control audio for each open pane.")
+                    row("Focused pane audio", "Only the selected pane plays sound.", "focusAudio")
+                    row("Pane volume", "Adjust volume and mute for the selected pane.", action = { volumeDialog(selectedKey) })
+                }
+                2 -> {
+                    heading("Links", "Site addresses are shared with the desktop app.")
+                    row("Update site list", "Download the latest addresses from GitHub.", action = { refreshLinks(true) })
+                    row("Link health", "Check whether your saved sites can be reached.", action = { healthCheck() })
+                    row("Quick access", "Open the sites in your quick-access list.", action = { quickAccess() })
+                }
+                3 -> {
+                    heading("Network", "DPI routing affects this app’s HTTPS browser traffic only. Android DNS and other apps are unchanged.")
+                    row("Experimental DPI bypass", "Routes HTTPS through the local TLS-fragmentation proxy. Success depends on the network.", "dpi")
+                    row("DPI options & diagnostics", "See routed connections, handshakes, errors, and fragment options.", action = { dpiMenu() })
+                    row("Ad blocking", "Block known advertising hosts.", "adblock", true)
+                    row("Auto-skip", "Attempt to skip supported video ads.", "autoskip", true)
+                }
             }
-        }.setNegativeButton("Close", null).show()
+        }
+        arrayOf("App", "Sound & Video", "Links", "Network").forEachIndexed { i, label -> tabs.addView(button(label) { section(i) }) }
+        section(0); dialog.setContentView(shell); dialog.show()
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.window?.setLayout(if (leanback) dp(850) else -1, -1)
     }
     private fun configureBrowser(view: WebView) {
         // Third-party players often use cookies and HTTP media within HTTPS pages.
