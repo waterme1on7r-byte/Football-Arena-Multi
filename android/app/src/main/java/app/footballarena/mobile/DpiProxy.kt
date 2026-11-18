@@ -13,7 +13,23 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** App-local CONNECT tunnel. TLS stays encrypted; no certificates or interception. */
-class DpiProxy(private val fragmentSize: Int, private val dns: SecureDns = SecureDns(), private val connector: ((String) -> Socket)? = null) {
+class DpiProxy(private val fragmentSize: Int, private val dns: SecureDns = SecureDns(), private val tlsRecords: Boolean = true, private val connector: ((String) -> Socket)? = null) {
+    private class HostStats {
+        val connections = AtomicInteger(); val sent = AtomicInteger(); val replies = AtomicInteger(); val bytes = AtomicLong(); val failures = AtomicInteger()
+        @Volatile var error = "None"
+        @Volatile var addresses = "Not resolved yet"
+    }
+    private val hosts = ConcurrentHashMap<String, HostStats>()
+    private val clientHosts = ConcurrentHashMap<Socket, String>()
+    fun describeHost(host: String): String {
+        val s = hosts[host] ?: return "$host: no tunneled requests yet"
+        return "$host\nAddresses: ${s.addresses}\nConnections: ${s.connections.get()} · Handshakes: ${s.sent.get()}\nServer replies: ${s.replies.get()} · Bytes: ${s.bytes.get()}\nErrors: ${s.failures.get()}\nLast host error: ${s.error}"
+    }
+    private fun recordFailure(client: Socket, message: String) {
+        val host = clientHosts[client] ?: "Unknown host"
+        failures.incrementAndGet(); lastError = "$host: $message".take(240)
+        hosts[host]?.let { it.failures.incrementAndGet(); it.error = message.take(180) }
+    }
     private val pool = Executors.newCachedThreadPool()
     private val sockets = ConcurrentHashMap.newKeySet<Socket>()
     private val slots = Semaphore(32)
@@ -38,7 +54,7 @@ class DpiProxy(private val fragmentSize: Int, private val dns: SecureDns = Secur
                     val client = server.accept()
                     if (!slots.tryAcquire()) { client.close(); continue }
                     sockets.add(client)
-                    pool.execute { try { tunnel(client) } catch (e: Exception) { if (!client.isClosed && !server.isClosed) { failures.incrementAndGet(); lastError = "Tunnel: ${e.message}".take(160) } } finally { sockets.remove(client); client.close(); slots.release() } }
+                    pool.execute { try { tunnel(client) } catch (e: Exception) { if (!client.isClosed && !server.isClosed) recordFailure(client, "Tunnel: ${e.message}") } finally { clientHosts.remove(client); sockets.remove(client); client.close(); slots.release() } }
                 } catch (_: Exception) { break }
             }
         }
@@ -61,6 +77,9 @@ class DpiProxy(private val fragmentSize: Int, private val dns: SecureDns = Secur
         val split = authority.lastIndexOf(':')
         if (split < 1 || authority.substring(split + 1) != "443") return
         val host = authority.substring(0, split).removeSurrounding("[", "]")
+        clientHosts[client] = host
+        val stats = hosts.getOrPut(host) { HostStats() }
+        stats.connections.incrementAndGet()
         connections.incrementAndGet(); lastHost = host
         val remote = connector?.invoke(host) ?: connectHost(host)
         sockets.add(remote)
@@ -79,20 +98,21 @@ class DpiProxy(private val fragmentSize: Int, private val dns: SecureDns = Secur
             read = 5
             while (read < record.size) { val n = inputTls.read(record, read, record.size - read); if (n < 0) return; read += n }
             val output = remote.getOutputStream()
-            var offset = 5
+            var offset = if (tlsRecords) 5 else 0
             while (offset < record.size) {
                 val n = minOf(fragmentSize, record.size - offset)
-                output.write(byteArrayOf(head[0], head[1], head[2], (n shr 8).toByte(), n.toByte()))
+                if (tlsRecords) output.write(byteArrayOf(head[0], head[1], head[2], (n shr 8).toByte(), n.toByte()))
                 output.write(record, offset, n); output.flush(); offset += n
                 if (offset < record.size) Thread.sleep(2)
             }
             handshakes.incrementAndGet()
+            stats.sent.incrementAndGet()
             client.soTimeout = 0
             remote.soTimeout = 15000
             val reported = AtomicBoolean()
             fun failure(message: String) {
                 if (!client.isClosed && listener?.isClosed == false && reported.compareAndSet(false, true)) {
-                    failures.incrementAndGet(); lastError = message.take(160)
+                    recordFailure(client, message)
                 }
             }
             pool.execute {
@@ -104,10 +124,11 @@ class DpiProxy(private val fragmentSize: Int, private val dns: SecureDns = Secur
                         val n = upstream.read(buffer)
                         if (n < 0) { if (!response) failure("Server closed before returning any TLS data"); break }
                         if (!response) {
-                            response = true; serverReplies.incrementAndGet(); remote.soTimeout = 0
+                            response = true; serverReplies.incrementAndGet(); stats.replies.incrementAndGet(); remote.soTimeout = 0
                             if (buffer[0].toInt() == 21) failure("Server returned a TLS alert after fragmentation")
                         }
                         receivedBytes.addAndGet(n.toLong())
+                        stats.bytes.addAndGet(n.toLong())
                         client.getOutputStream().write(buffer, 0, n)
                     }
                 } catch (e: Exception) { failure("Server read: ${e.message}") }
@@ -119,6 +140,7 @@ class DpiProxy(private val fragmentSize: Int, private val dns: SecureDns = Secur
 
     private fun connectHost(host: String): Socket {
         val addresses = dns.resolve(host).sortedBy { it is java.net.Inet6Address }
+        hosts[host]?.addresses = addresses.joinToString { it.hostAddress ?: "?" }
         // Never let an untrusted page use the tunnel to reach local network services.
         val allowed = addresses.filter { !it.isAnyLocalAddress && !it.isLoopbackAddress && !it.isLinkLocalAddress && !it.isSiteLocalAddress && !it.isMulticastAddress }
         var error: Exception? = null

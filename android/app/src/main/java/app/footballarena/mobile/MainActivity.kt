@@ -489,9 +489,12 @@ class MainActivity : Activity() {
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private fun dpiMenu() {
         val p = dpiProxy
+        val focusedHost = android.net.Uri.parse(pageSites[selectedKey]?.url ?: browser.url ?: "").host ?: "Unknown"
+        val focusedReport = p?.describeHost(focusedHost) ?: "Proxy is off"
         AlertDialog.Builder(this).setTitle("DPI bypass · $dpiState")
-            .setItems(arrayOf(if (dpiProxy == null) "Turn on" else "Turn off", "Restart", "Option 1 · 8-byte fragments", "Option 2 · 32-byte fragments", "Option 3 · 64-byte fragments", "Diagnostics · ${p?.connections?.get() ?: 0} routed connections")) { _, n ->
-                if (n == 5) { AlertDialog.Builder(this).setTitle("DPI diagnostics").setMessage("App HTTPS traffic uses encrypted DNS and TLS fragmentation. Other apps are unchanged.\n\nConnections: ${p?.connections?.get() ?: 0}\nFragmented handshakes sent: ${p?.handshakes?.get() ?: 0}\nServer replies: ${p?.serverReplies?.get() ?: 0}\nReceived bytes: ${p?.receivedBytes?.get() ?: 0}\nErrors: ${p?.failures?.get() ?: 0}\nLast host: ${p?.lastHost ?: "None"}\nDNS result: ${p?.dnsResult ?: "None"}\nLast error: ${p?.lastError ?: "None"}\nLast page error: $lastPageError\n\nThese counts verify routing and transmission, not successful bypass. If counts stay zero after a page reload, no HTTPS traffic reached this proxy.").setPositiveButton("Close", null).show(); return@setItems }
+            .setItems(arrayOf(if (dpiProxy == null) "Turn on" else "Turn off", "Restart", "Option 1 · 8-byte fragments", "Option 2 · 32-byte fragments", "Option 3 · 64-byte fragments", "Diagnostics · ${p?.connections?.get() ?: 0} routed connections", if (prefs.getBoolean("dpiTlsRecords", true)) "Try compatibility mode · preserve TLS record" else "Use TLS record fragmentation")) { _, n ->
+                if (n == 6) { prefs.edit().putBoolean("dpiTlsRecords", !prefs.getBoolean("dpiTlsRecords", true)).putBoolean("dpi", true).apply(); updateDpi(true); return@setItems }
+                if (n == 5) { AlertDialog.Builder(this).setTitle("Selected site diagnostics").setMessage("Mode: ${if (prefs.getBoolean("dpiTlsRecords", true)) "TLS record fragmentation" else "TCP writes, original TLS record"}\n\n$focusedReport\n\nSelected page error: ${loadErrors[browser] ?: "None recorded"}\n\nApp totals: ${p?.connections?.get() ?: 0} connections, ${p?.serverReplies?.get() ?: 0} server replies.\n\nBackground requests and video CDNs have separate host counters. Replies show received traffic, not verified page access.").setPositiveButton("Close", null).show(); return@setItems }
                 if (n >= 2) prefs.edit().putInt("dpiFragment", listOf(8, 32, 64)[n - 2]).putBoolean("dpi", true).apply()
                 else prefs.edit().putBoolean("dpi", if (n == 1) true else dpiProxy == null).apply()
                 updateDpi(true)
@@ -506,7 +509,7 @@ class MainActivity : Activity() {
             dpiProxy?.stop(); dpiProxy = null
             if (!prefs.getBoolean("dpi", false)) { dpiState = "Off"; dpiButton.text = "DPI · Off"; if (reload) pages.values.forEach { it.reload() }; return@clearProxyOverride }
             try {
-                val proxy = DpiProxy(prefs.getInt("dpiFragment", 32).coerceIn(8, 64))
+                val proxy = DpiProxy(prefs.getInt("dpiFragment", 32).coerceIn(8, 64), tlsRecords = prefs.getBoolean("dpiTlsRecords", true))
                 val port = proxy.start(); dpiProxy = proxy
                 val config = ProxyConfig.Builder().addProxyRule("http://127.0.0.1:$port", "https").build()
                 ProxyController.getInstance().setProxyOverride(config, executor) {
@@ -562,7 +565,7 @@ class MainActivity : Activity() {
             content.removeAllViews()
             when (n) {
                 0 -> {
-                    heading("App", "Football Arena · Android preview 1.8.9")
+                    heading("App", "Football Arena · Android preview 1.8.10")
                     row("Restore session", "Remember the last page and layout.", "restore", true)
                     row("Passcode", "Ask for a four-digit code when the app starts.", action = { changePass() })
                     row("Export sites", "Save a JSON file compatible with the desktop app.", action = { documentPicker(true) })

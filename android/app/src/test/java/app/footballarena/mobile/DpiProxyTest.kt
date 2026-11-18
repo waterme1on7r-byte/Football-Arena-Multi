@@ -8,20 +8,20 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 class DpiProxyTest {
-    private fun runTunnel(reply: Boolean) {
+    private fun runTunnel(reply: Boolean, records: Boolean = true) {
         val server = ServerSocket(0)
         val worker = Executors.newSingleThreadExecutor()
-        val proxy = DpiProxy(8) { Socket("127.0.0.1", server.localPort) }
+        val proxy = DpiProxy(8, tlsRecords = records) { Socket("127.0.0.1", server.localPort) }
         val payload = ByteArray(16) { it.toByte() }
         val task = worker.submit {
             server.accept().use { peer ->
                 peer.soTimeout = 4000
                 val input = java.io.DataInputStream(peer.getInputStream())
                 val reconstructed = java.io.ByteArrayOutputStream()
-                repeat(2) {
+                repeat(if (records) 2 else 1) {
                     assertEquals(22, input.readUnsignedByte())
                     assertEquals(3, input.readUnsignedByte()); assertEquals(1, input.readUnsignedByte())
-                    val size = input.readUnsignedShort(); assertEquals(8, size)
+                    val size = input.readUnsignedShort(); assertEquals(if (records) 8 else 16, size)
                     val bytes = ByteArray(size); input.readFully(bytes); reconstructed.write(bytes)
                 }
                 assertArrayEquals(payload, reconstructed.toByteArray())
@@ -44,6 +44,7 @@ class DpiProxyTest {
             }
             task.get(6, TimeUnit.SECONDS)
             assertEquals(1, proxy.handshakes.get())
+            assertTrue(proxy.describeHost("test.example").contains("Connections: 1"))
             if (reply) {
                 assertEquals(1, proxy.serverReplies.get()); assertEquals(6L, proxy.receivedBytes.get())
                 assertEquals("Normal peer EOF must not become Socket closed failure", 0, proxy.failures.get())
@@ -56,4 +57,5 @@ class DpiProxyTest {
 
     @Test fun relaysServerReplyAndDoesNotCountNormalClosureAsError() { runTunnel(true) }
     @Test fun reportsUpstreamClosureBeforeReply() { runTunnel(false) }
+    @Test fun compatibilityModePreservesOriginalTlsRecord() { runTunnel(true, false) }
 }
