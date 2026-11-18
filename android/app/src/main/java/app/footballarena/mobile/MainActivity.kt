@@ -437,7 +437,7 @@ class MainActivity : Activity() {
         val p = dpiProxy
         AlertDialog.Builder(this).setTitle("DPI bypass · $dpiState")
             .setItems(arrayOf(if (dpiProxy == null) "Turn on" else "Turn off", "Restart", "Option 1 · 8-byte fragments", "Option 2 · 32-byte fragments", "Option 3 · 64-byte fragments", "Diagnostics · ${p?.connections?.get() ?: 0} routed connections")) { _, n ->
-                if (n == 5) { AlertDialog.Builder(this).setTitle("DPI diagnostics").setMessage("App HTTPS traffic only. Other apps and Android DNS are not routed.\n\nConnections: ${p?.connections?.get() ?: 0}\nFragmented handshakes sent: ${p?.handshakes?.get() ?: 0}\nErrors: ${p?.failures?.get() ?: 0}\nLast host: ${p?.lastHost ?: "None"}\nLast error: ${p?.lastError ?: "None"}\n\nThese counts verify routing and transmission, not successful bypass. If counts stay zero after a page reload, no HTTPS traffic reached this proxy.").setPositiveButton("Close", null).show(); return@setItems }
+                if (n == 5) { AlertDialog.Builder(this).setTitle("DPI diagnostics").setMessage("App HTTPS traffic only. Other apps and Android DNS are not routed.\n\nConnections: ${p?.connections?.get() ?: 0}\nFragmented handshakes sent: ${p?.handshakes?.get() ?: 0}\nServer replies: ${p?.serverReplies?.get() ?: 0}\nReceived bytes: ${p?.receivedBytes?.get() ?: 0}\nErrors: ${p?.failures?.get() ?: 0}\nLast host: ${p?.lastHost ?: "None"}\nLast error: ${p?.lastError ?: "None"}\n\nThese counts verify routing and transmission, not successful bypass. If counts stay zero after a page reload, no HTTPS traffic reached this proxy.").setPositiveButton("Close", null).show(); return@setItems }
                 if (n >= 2) prefs.edit().putInt("dpiFragment", listOf(8, 32, 64)[n - 2]).putBoolean("dpi", true).apply()
                 else prefs.edit().putBoolean("dpi", if (n == 1) true else dpiProxy == null).apply()
                 updateDpi(true)
@@ -508,7 +508,7 @@ class MainActivity : Activity() {
             content.removeAllViews()
             when (n) {
                 0 -> {
-                    heading("App", "Football Arena · Android preview 1.8.4")
+                    heading("App", "Football Arena · Android preview 1.8.5")
                     row("Restore session", "Remember the last page and layout.", "restore", true)
                     row("Passcode", "Ask for a four-digit code when the app starts.", action = { changePass() })
                     row("Export sites", "Save a JSON file compatible with the desktop app.", action = { documentPicker(true) })
@@ -599,3 +599,4 @@ class MainActivity : Activity() {
     }
     override fun onDestroy() { dpiProxy?.stop(); pages.values.distinct().forEach { it.destroy() }; if (pages.isEmpty() && ::browser.isInitialized) browser.destroy(); io.shutdownNow(); super.onDestroy() }
 }
+
