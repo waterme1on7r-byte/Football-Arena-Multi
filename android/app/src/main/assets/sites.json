@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "updated": "2026-11-17",
+  "sites": [
+    {
+      "id": "ardaspor",
+      "name": "ARDASPOR",
+      "url": "https://ardaspor40.top/"
+    },
+    {
+      "id": "inatbox",
+      "name": "INATBOX",
+      "url": "https://inattv1328.xyz/"
+    },
+    {
+      "id": "trgoals",
+      "name": "TRGOALS",
+      "url": "https://taraftarium1087.xyz/"
+    },
+    {
+      "id": "patronspor",
+      "name": "PATRONSPOR",
+      "url": "https://patronizle60.cfd/"
+    },
+    {
+      "id": "mahsunsports",
+      "name": "MahsunSports",
+      "url": "https://mahsunsports60.xyz/"
+    },
+    {
+      "id": "netspor",
+      "name": "NETSPOR",
+      "url": "https://netspor.co/"
+    },
+    {
+      "id": "zeustv",
+      "name": "Zeus TV",
+      "url": "https://zeustv276.live/"
+    },
+    {
+      "id": "fctv33",
+      "name": "FCTV33",
+      "url": "https://www.fctv33.com/tr"
+    },
+    {
+      "id": "extratv",
+      "name": "Extra TV",
+      "url": "https://www.extrabet2112.com/tr/int/sport/TV"
+    },
+    {
+      "id": "liveball",
+      "name": "Liveball",
+      "url": "https://liveball.sx/"
+    },
+    {
+      "id": "ardaspor-giris",
+      "name": "Arda Spor Giriş",
+      "url": "https://ardaspor.live/",
+      "quick": true
+    },
+    {
+      "id": "inatbox-giris",
+      "name": "Inatbox Giriş",
+      "url": "https://inattvgiris.co/",
+      "quick": true
+    },
+    {
+      "id": "patronspor-giris",
+      "name": "PatronSpor Giriş",
+      "url": "https://patronspor.is/",
+      "quick": true
+    },
+    {
+      "id": "trgoal-giris",
+      "name": "TrGoal Giriş",
+      "url": "https://taraftarium24.io/",
+      "quick": true
+    },
+    {
+      "id": "mahsunsports-giris",
+      "name": "MahsunSports Giriş",
+      "url": "https://mahsunsports.com/",
+      "quick": true
+    }
+  ],
+  "remove": [],
+  "chat": {
+    "enabled": true,
+    "room": "football-arena-wtmljr-v1",
+    "servers": [
+      "wss://broker.hivemq.com:8884/mqtt",
+      "wss://broker.emqx.io:8084/mqtt",
+      "wss://test.mosquitto.org:8081/"
+    ]
+  },
+  "minVersion": "1.0.0"
+}
