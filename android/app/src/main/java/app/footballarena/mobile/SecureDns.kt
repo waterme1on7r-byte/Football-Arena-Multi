@@ -27,14 +27,14 @@ class SecureDns(private val fetch: (String) -> String = ::fetchDns) {
         var last: Exception? = null
         // The IP-based second endpoint does not need Android DNS to bootstrap the resolver.
         for (provider in listOf("https://dns.google/resolve", "https://1.1.1.1/dns-query")) {
-            try {
+                val addresses = mutableListOf<InetAddress>()
+                var ttl = 300
                 for (type in listOf(1, 28)) {
+                    try {
                     val name = URLEncoder.encode(host, "UTF-8")
                     val json = JSONObject(fetch("$provider?name=$name&type=$type&edns_client_subnet=0.0.0.0%2F0"))
                     require(json.optInt("Status", -1) == 0 && !json.optBoolean("TC")) { "DNS status ${json.optInt("Status", -1)}" }
                     val answers = json.optJSONArray("Answer")
-                    val addresses = mutableListOf<InetAddress>()
-                    var ttl = 300
                     if (answers != null) for (i in 0 until answers.length()) {
                         val answer = answers.optJSONObject(i) ?: continue
                         ttl = minOf(ttl, answer.optInt("TTL", 0).coerceAtLeast(0))
@@ -44,15 +44,14 @@ class SecureDns(private val fetch: (String) -> String = ::fetchDns) {
                             else value.contains(':') && value.matches(Regex("[0-9a-fA-F:]+"))
                         if (numeric) addresses.add(InetAddress.getByName(value))
                     }
-                    if (addresses.isNotEmpty()) {
+                    } catch (e: Exception) { last = e }
+                }
+                if (addresses.isNotEmpty()) {
                         val result = addresses.distinctBy { it.hostAddress }
                         if (ttl > 0) cache[host] = Entry(result, System.currentTimeMillis() + ttl * 1000L)
                         lastResult = "$host → ${result.joinToString { it.hostAddress ?: "?" }} (${URL(provider).host}, HTTPS)"
                         return result
-                    }
                 }
-                throw UnknownHostException("No A or AAAA answers")
-            } catch (e: Exception) { last = e }
         }
         lastResult = "$host: encrypted DNS failed (${last?.message})"
         throw UnknownHostException("Encrypted DNS failed for $host: ${last?.message}")
