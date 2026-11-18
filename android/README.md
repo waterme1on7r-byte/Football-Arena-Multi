@@ -8,9 +8,15 @@ The GitHub Actions workflow builds a debug APK on pushes and tags. Download `foo
 
 ## Current scope
 
-Implemented in this first Android shell: live site-list refresh, saved custom sites, add/edit/delete sites, WebView navigation, back/forward/reload, page sharing, last-page restore, 1/2/4-pane layouts, full-screen video, pane mute and focused-pane audio, basic ad-host blocking, and the existing auto-skip script. The UI adapts its control sizes for Android TV remotes. No chat UI or chat connection is included.
+The Android preview includes live site-list refresh, saved custom sites, add/edit/delete sites, quick access, site import/export, link-health checks, a salted passcode lock, WebView navigation, page sharing, last-page restore, Auto/1/2/3/4-pane layouts, a Main pane, full-screen video, pane mute/volume and focused-pane audio, basic ad-host blocking, and the existing auto-skip script. The desktop-style toolbar and pane controls use larger focusable buttons on TV. Chat is excluded.
 
-The Android preview does not yet match desktop feature-for-feature. The desktop's per-pane volume slider, main-pane layout, parental passcode, link-health dashboard, full filter-list ad blocker, DPI bypass controls, log export, settings import/export, and in-app updating still need Android implementations. Android updates should ultimately be distributed through Google Play or signed APKs using a persistent release key; the CI debug APK is for preview/testing and is not the final update channel.
+The native Android UI is adapted from the desktop design; it is not pixel-identical. Full filter-list ad blocking, log export, full settings import/export, and in-app APK updating are still outstanding. Android updates need a persistent signing key; CI debug APKs are for testing, not the final update channel.
+
+## DPI bypass
+
+Upstream SpoofDPI does not officially support Android. This preview instead has a separate experimental Kotlin implementation of TLS handshake fragmentation. It runs a CONNECT proxy bound to loopback and routes HTTPS requests from this app's WebViews through it using AndroidX ProxyController. It does not require root or a VPN, modify certificates, decrypt TLS, or route other apps. DNS still uses Android's resolver. UDP/QUIC, DNS-based blocks, IP-based blocks, and all censorship systems are not covered by this technique.
+
+Open **DPI** for On/Off, Restart, and three fragmentation sizes. It defaults to Off. **On** means the listener and WebView routing were configured, not that bypass succeeded on your network. Older WebView versions without proxy override support show Unsupported. A page reload is performed after switching routing. Test playback on the actual phone/TV/network before treating bypass as working.
 
 ## Build locally
 
