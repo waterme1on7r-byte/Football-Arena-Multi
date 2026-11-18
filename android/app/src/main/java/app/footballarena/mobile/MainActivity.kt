@@ -43,6 +43,9 @@ class MainActivity : Activity() {
     private var mainPane = ""
     private var dpiProxy: DpiProxy? = null
     private var dpiState = "Off"
+    private val loadErrors = mutableMapOf<WebView, String>()
+    private val errorLabels = mutableMapOf<WebView, TextView>()
+    private var lastPageError = "None"
     private lateinit var dpiButton: Button
     private val pages = linkedMapOf<String, WebView>()
     private val pageSites = mutableMapOf<String, Site>()
@@ -180,6 +183,10 @@ class MainActivity : Activity() {
     }
 
     private fun makePageClient(): WebViewClient = object : WebViewClient() {
+                override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+                    loadErrors.remove(view); errorLabels[view]?.visibility = View.GONE
+                    if (view === browser) status.text = "Loading…"
+                }
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     val u = request.url.toString()
                     return !(u.startsWith("https://") || u.startsWith("http://"))
@@ -195,13 +202,26 @@ class MainActivity : Activity() {
                     if (view === browser) {
                         selected = url
                         prefs.edit().putString("last", url).apply()
-                        status.text = "Ready"
+                        status.text = if (loadErrors.containsKey(view)) "Page failed · see pane" else "Ready"
                     }
                     runAutoSkip(view)
                 }
                 override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-                    if (request.isForMainFrame) status.text = "Page failed to load · ${error.description}"
+                    if (request.isForMainFrame) pageFailed(view, request.url.toString(), "WebView ${error.errorCode}: ${error.description}")
                 }
+                override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
+                    if (request.isForMainFrame) pageFailed(view, request.url.toString(), "HTTP ${response.statusCode}: ${response.reasonPhrase}")
+                }
+                override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: android.net.http.SslError) {
+                    handler.cancel()
+                    pageFailed(view, error.url, "Certificate validation failed (${error.primaryError}). Connection cancelled.")
+                }
+    }
+    private fun pageFailed(view: WebView, url: String, message: String) {
+        lastPageError = "$url\n$message"
+        loadErrors[view] = lastPageError
+        errorLabels[view]?.apply { text = "Couldn’t load this page\n\n$lastPageError\n\nUse the pane’s refresh button to retry."; visibility = View.VISIBLE }
+        if (view === browser) status.text = "Page failed · see pane"
     }
 
     private fun buildStage(root: LinearLayout) {
@@ -296,7 +316,17 @@ class MainActivity : Activity() {
             controls.addView(button("↻") { page.reload() })
             controls.addView(button("×") { selectedKey = key; closePane() })
             pane.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(controls) })
-            pane.addView(page, LinearLayout.LayoutParams(-1, 0, 1f))
+            val viewport = FrameLayout(this)
+            viewport.addView(page, FrameLayout.LayoutParams(-1, -1))
+            val errorLabel = TextView(this).apply {
+                gravity = Gravity.CENTER; setPadding(dp(20), dp(20), dp(20), dp(20)); setBackgroundColor(bg); setTextColor(this@MainActivity.text); textSize = 15f
+                visibility = if (loadErrors.containsKey(page)) View.VISIBLE else View.GONE
+                text = "Couldn’t load this page\n\n${loadErrors[page] ?: ""}\n\nUse the pane’s refresh button to retry."
+                setTextIsSelectable(true)
+            }
+            errorLabels[page] = errorLabel
+            viewport.addView(errorLabel, FrameLayout.LayoutParams(-1, -1))
+            pane.addView(viewport, LinearLayout.LayoutParams(-1, 0, 1f))
             stage.addView(pane, lp)
             page.onResume()
             page.setOnFocusChangeListener { _, focused -> if (focused) { selectedKey = key; browser = page; renderSiteBar(); applyAudio() } }
@@ -461,7 +491,7 @@ class MainActivity : Activity() {
         val p = dpiProxy
         AlertDialog.Builder(this).setTitle("DPI bypass · $dpiState")
             .setItems(arrayOf(if (dpiProxy == null) "Turn on" else "Turn off", "Restart", "Option 1 · 8-byte fragments", "Option 2 · 32-byte fragments", "Option 3 · 64-byte fragments", "Diagnostics · ${p?.connections?.get() ?: 0} routed connections")) { _, n ->
-                if (n == 5) { AlertDialog.Builder(this).setTitle("DPI diagnostics").setMessage("App HTTPS traffic only. Other apps and Android DNS are not routed.\n\nConnections: ${p?.connections?.get() ?: 0}\nFragmented handshakes sent: ${p?.handshakes?.get() ?: 0}\nServer replies: ${p?.serverReplies?.get() ?: 0}\nReceived bytes: ${p?.receivedBytes?.get() ?: 0}\nErrors: ${p?.failures?.get() ?: 0}\nLast host: ${p?.lastHost ?: "None"}\nLast error: ${p?.lastError ?: "None"}\n\nThese counts verify routing and transmission, not successful bypass. If counts stay zero after a page reload, no HTTPS traffic reached this proxy.").setPositiveButton("Close", null).show(); return@setItems }
+                if (n == 5) { AlertDialog.Builder(this).setTitle("DPI diagnostics").setMessage("App HTTPS traffic only. Other apps and Android DNS are not routed.\n\nConnections: ${p?.connections?.get() ?: 0}\nFragmented handshakes sent: ${p?.handshakes?.get() ?: 0}\nServer replies: ${p?.serverReplies?.get() ?: 0}\nReceived bytes: ${p?.receivedBytes?.get() ?: 0}\nErrors: ${p?.failures?.get() ?: 0}\nLast host: ${p?.lastHost ?: "None"}\nLast error: ${p?.lastError ?: "None"}\nLast page error: $lastPageError\n\nThese counts verify routing and transmission, not successful bypass. If counts stay zero after a page reload, no HTTPS traffic reached this proxy.").setPositiveButton("Close", null).show(); return@setItems }
                 if (n >= 2) prefs.edit().putInt("dpiFragment", listOf(8, 32, 64)[n - 2]).putBoolean("dpi", true).apply()
                 else prefs.edit().putBoolean("dpi", if (n == 1) true else dpiProxy == null).apply()
                 updateDpi(true)
@@ -532,7 +562,7 @@ class MainActivity : Activity() {
             content.removeAllViews()
             when (n) {
                 0 -> {
-                    heading("App", "Football Arena · Android preview 1.8.6")
+                    heading("App", "Football Arena · Android preview 1.8.7")
                     row("Restore session", "Remember the last page and layout.", "restore", true)
                     row("Passcode", "Ask for a four-digit code when the app starts.", action = { changePass() })
                     row("Export sites", "Save a JSON file compatible with the desktop app.", action = { documentPicker(true) })
@@ -577,6 +607,7 @@ class MainActivity : Activity() {
     }
     private fun closePane() {
         val page = pages.remove(selectedKey) ?: return
+        errorLabels.remove(page); loadErrors.remove(page)
         (page.parent as? android.view.ViewGroup)?.removeView(page); page.destroy()
         pageSites.remove(selectedKey)
         selectedKey = pages.keys.firstOrNull() ?: ""
