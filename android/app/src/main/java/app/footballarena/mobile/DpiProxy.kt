@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** App-local CONNECT tunnel. TLS stays encrypted; no certificates or interception. */
-class DpiProxy(private val fragmentSize: Int, private val connector: ((String) -> Socket)? = null) {
+class DpiProxy(private val fragmentSize: Int, private val dns: SecureDns = SecureDns(), private val connector: ((String) -> Socket)? = null) {
     private val pool = Executors.newCachedThreadPool()
     private val sockets = ConcurrentHashMap.newKeySet<Socket>()
     private val slots = Semaphore(32)
@@ -25,6 +25,7 @@ class DpiProxy(private val fragmentSize: Int, private val connector: ((String) -
     val failures = AtomicInteger()
     val serverReplies = AtomicInteger()
     val receivedBytes = AtomicLong()
+    val dnsResult: String get() = dns.lastResult
     @Volatile var lastHost = "No traffic yet"
         private set
 
@@ -117,7 +118,7 @@ class DpiProxy(private val fragmentSize: Int, private val connector: ((String) -
     }
 
     private fun connectHost(host: String): Socket {
-        val addresses = InetAddress.getAllByName(host).sortedBy { it is java.net.Inet6Address }
+        val addresses = dns.resolve(host).sortedBy { it is java.net.Inet6Address }
         // Never let an untrusted page use the tunnel to reach local network services.
         val allowed = addresses.filter { !it.isAnyLocalAddress && !it.isLoopbackAddress && !it.isLinkLocalAddress && !it.isSiteLocalAddress && !it.isMulticastAddress }
         var error: Exception? = null

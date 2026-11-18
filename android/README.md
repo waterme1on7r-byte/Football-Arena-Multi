@@ -14,7 +14,9 @@ The native Android UI is adapted from the desktop design; it is not pixel-identi
 
 ## DPI bypass
 
-Upstream SpoofDPI does not officially support Android. This preview instead has a separate experimental Kotlin implementation of TLS handshake fragmentation. It runs a CONNECT proxy bound to loopback and routes HTTPS requests from this app's WebViews through it using AndroidX ProxyController. It does not require root or a VPN, modify certificates, decrypt TLS, or route other apps. DNS still uses Android's resolver. UDP/QUIC, DNS-based blocks, IP-based blocks, and all censorship systems are not covered by this technique.
+Upstream SpoofDPI does not officially support Android. This preview instead has a separate experimental Kotlin implementation of TLS handshake fragmentation. It runs a CONNECT proxy bound to loopback and routes HTTPS requests from this app's WebViews through it using AndroidX ProxyController. It does not require root or a VPN, modify certificates, decrypt TLS, or route other apps.
+
+As of 1.8.8, the proxy resolves tunneled origins using DNS over HTTPS (Google Public DNS, with Cloudflare's IP-based HTTPS endpoint as fallback). It does not fall back to the system resolver if those requests fail, because system answers can point to a blocking page instead of the real server. Normal TLS certificate validation is retained for the resolver connections. Diagnostics include the encrypted DNS result. Answers are cached for their TTL, capped at five minutes. This does not change device-wide DNS. It does not overcome every kind of IP or network block, and needs device/network testing.
 
 Open **DPI** for On/Off, Restart, and three fragmentation sizes. It defaults to Off. **On** means the listener and WebView routing were configured, not that bypass succeeded on your network. Older WebView versions without proxy override support show Unsupported. A page reload is performed after switching routing. Test playback on the actual phone/TV/network before treating bypass as working.
 
