@@ -47,8 +47,8 @@ class MainActivity : Activity() {
     private val pages = linkedMapOf<String, WebView>()
     private val pageSites = mutableMapOf<String, Site>()
     private var leanback = false
-    private val bg = Color.rgb(8, 13, 19)
-    private val panel = Color.rgb(17, 25, 35)
+    private val bg = Color.rgb(11, 15, 20)
+    private val panel = Color.rgb(18, 25, 35)
     private val gold = Color.rgb(245, 196, 81)
     private val text = Color.rgb(233, 237, 242)
     private val adHosts = setOf("doubleclick.net", "googlesyndication.com", "googleadservices.com", "adnxs.com", "adsrvr.org", "taboola.com", "outbrain.com")
@@ -137,23 +137,33 @@ class MainActivity : Activity() {
             val bars = insets.getInsets(android.view.WindowInsets.Type.systemBars())
             view.setPadding(bars.left, bars.top, bars.right, bars.bottom); insets
         }
-        val toolbar = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(14), dp(8), dp(10), dp(8)); setBackgroundColor(panel) }
-        title = TextView(this).apply { text = "◉  FOOTBALL ARENA"; gravity = Gravity.CENTER_VERTICAL; setTextColor(gold); textSize = if (leanback) 28f else 22f; typeface = Typeface.create("sans-serif-condensed", Typeface.BOLD) }
-        toolbar.addView(title, LinearLayout.LayoutParams(0, dp(48), 1f))
-        toolbar.addView(button("⚙") { settingsDialog() }.apply { contentDescription = "Settings" })
-        root.addView(toolbar)
-        val tools = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        val wide = resources.configuration.screenWidthDp >= 1000
+        val toolbar = LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL; setPadding(dp(18), dp(12), dp(14), dp(12))
+            background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TL_BR, intArrayOf(Color.rgb(38,33,24), bg, bg))
+        }
+        val brand = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, dp(16), 0) }
+        if (wide) brand.addView(ImageView(this).apply { setImageResource(app.footballarena.mobile.R.drawable.arena_mark); importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO }, LinearLayout.LayoutParams(dp(48), dp(48)))
+        title = TextView(this).apply { text = if (wide) "FOOTBALL ARENA" else "FOOTBALL\nARENA"; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(8), 0, 0, 0); setTextColor(gold); textSize = if (wide) 30f else 18f; typeface = Typeface.create("sans-serif-condensed", Typeface.BOLD) }
+        brand.addView(title); toolbar.addView(brand)
+        val tools = LinearLayout(this).apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL }
         dpiButton = button("DPI · Off") { dpiMenu() }
         tools.addView(dpiButton)
         tools.addView(button("Layout ▾") { AlertDialog.Builder(this).setTitle("Layout").setSingleChoiceItems(arrayOf("Auto", "1 pane", "2 panes", "3 panes", "4 panes"), layoutCount) { d, n -> setLayout(n); d.dismiss() }.show() })
         tools.addView(button("Close all") { pages.keys.toList().forEach { selectedKey = it; closePane() } })
+        tools.addView(button("⚙ Settings") { settingsDialog() })
         tools.addView(button("Add site", true) { addSite() })
-        root.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(tools) })
-        val scroll = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; setBackgroundColor(panel); isFocusable = false }
+        toolbar.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; isFillViewport = true; addView(tools) }, LinearLayout.LayoutParams(0, -2, 1f))
+        root.addView(toolbar)
+        root.addView(View(this).apply { background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(gold, Color.rgb(34,48,66), bg)) }, LinearLayout.LayoutParams(-1, dp(1)))
+        val siteRow = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(14), dp(10), dp(14), dp(10)) }
+        val scroll = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; isFocusable = false }
         listBar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(dp(8), dp(4), dp(8), dp(4)) }
         scroll.addView(listBar)
-        root.addView(scroll, LinearLayout.LayoutParams(-1, dp(if (leanback) 66 else 52)))
-        listBar.addView(button("Quick access") { quickAccess() })
+        siteRow.addView(scroll, LinearLayout.LayoutParams(0, dp(if (leanback) 60 else 50), 1f))
+        siteRow.addView(View(this).apply { setBackgroundColor(Color.rgb(34,48,66)) }, LinearLayout.LayoutParams(dp(1), dp(26)).apply { marginStart = dp(12); marginEnd = dp(12) })
+        siteRow.addView(button("ϟ Quick access", true) { quickAccess() })
+        root.addView(siteRow)
         browser = WebView(this).apply {
             setBackgroundColor(Color.BLACK)
             settings.javaScriptEnabled = true
@@ -195,15 +205,14 @@ class MainActivity : Activity() {
     }
 
     private fun buildStage(root: LinearLayout) {
-        stage = GridLayout(this).apply { setBackgroundColor(Color.BLACK); useDefaultMargins = true }
+        stage = GridLayout(this).apply { setBackgroundColor(bg); useDefaultMargins = false; setPadding(dp(14), dp(2), dp(14), dp(10)) }
         root.addView(stage, LinearLayout.LayoutParams(-1, 0, 1f))
-        val footer = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(8), dp(5), dp(8), dp(5)); setBackgroundColor(panel) }
+        root.addView(View(this).apply { setBackgroundColor(Color.rgb(34,48,66)) }, LinearLayout.LayoutParams(-1, dp(1)))
+        val footer = FrameLayout(this).apply { setPadding(dp(14), dp(4), dp(14), dp(4)); setBackgroundColor(bg) }
         status = TextView(this).apply { setTextColor(Color.LTGRAY); textSize = 12f; text = "Ready" }
-        footer.addView(status, LinearLayout.LayoutParams(0, dp(42), 1f))
-        footer.addView(TextView(this).apply { text = "WTMLJR"; setTextColor(gold); textSize = 12f })
-        footer.addView(button("‹", false) { if (browser.canGoBack()) browser.goBack() })
-        footer.addView(button("↻", false) { browser.reload() })
-        footer.addView(button("›", false) { if (browser.canGoForward()) browser.goForward() })
+        status.gravity = Gravity.CENTER_VERTICAL; status.maxWidth = dp(180)
+        footer.addView(status, FrameLayout.LayoutParams(-2, dp(32), Gravity.START or Gravity.CENTER_VERTICAL))
+        footer.addView(TextView(this).apply { text = "WTMLJR"; setTextColor(gold); textSize = 12f; letterSpacing = .25f; gravity = Gravity.CENTER }, FrameLayout.LayoutParams(-2, dp(32), Gravity.CENTER))
         root.addView(footer)
         setContentView(root)
         renderSiteBar()
@@ -213,13 +222,15 @@ class MainActivity : Activity() {
         if (!::listBar.isInitialized) return
         listBar.removeAllViews()
         sites.filter { !it.quick }.forEach { s ->
-            val b = button(s.name, s.id == selectedKey) { openSite(s) }
-            b.background = controlBackground(s.id == selectedKey, true)
-            b.contentDescription = "Open ${s.name}"
+            val isOpen = pages.containsKey(s.id)
+            val b = button((if (isOpen) "●  " else "") + s.name) { openSite(s) }
+            b.setTextColor(if (isOpen) gold else text)
+            b.background = tabBackground(isOpen, s.id == selectedKey)
+            b.contentDescription = "${s.name}, ${if (isOpen) "open" else "closed"}${if (s.id == selectedKey) ", focused" else ""}"
+            b.isSelected = isOpen
             b.setOnLongClickListener { editSite(s); true }
             listBar.addView(b)
         }
-        listBar.addView(button("Quick access") { quickAccess() })
     }
     private fun quickAccess() {
         val quick = sites.filter { it.quick }
@@ -228,11 +239,15 @@ class MainActivity : Activity() {
 
     private fun openSite(site: Site) {
         selectedKey = site.id
+        val existing = pages[site.id]
+        if (existing != null) {
+            browser = existing; selected = site.id
+            renderSiteBar()
+            if (existing.parent == null) renderPages() else { existing.requestFocus(); applyAudio() }
+            status.text = site.name
+            return
+        }
         if (!pages.containsKey(site.id)) {
-            if (pages.size >= 4) {
-                val victim = pages.keys.firstOrNull { it != selectedKey } ?: pages.keys.firstOrNull()
-                if (victim != null) { pages.remove(victim)?.destroy(); pageSites.remove(victim) }
-            }
             val page = if (pages.isEmpty() && browser.url == null) browser else createPage()
             pages[site.id] = page; pageSites[site.id] = site
             if (page.url.isNullOrBlank()) page.loadUrl(site.url)
@@ -271,10 +286,10 @@ class MainActivity : Activity() {
             val row = if (prominent) maxOf(0, i - 1) else i / cols
             val span = if (prominent && i == 0) open.size - 1 else 1
             val lp = GridLayout.LayoutParams(GridLayout.spec(row, span, GridLayout.FILL, 1f), GridLayout.spec(col, 1, GridLayout.FILL, if (prominent && i == 0) 2f else 1f)).apply {
-                width = 0; height = 0; setMargins(dp(1), dp(1), dp(1), dp(1))
+                width = 0; height = 0; setMargins(dp(4), dp(4), dp(4), dp(4))
             }
-            val pane = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(panel) }
-            val controls = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+            val pane = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; background = controlBackground(false); clipToOutline = true; setPadding(dp(1), dp(1), dp(1), dp(1)) }
+            val controls = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(4), dp(4), dp(4), dp(4)) }
             controls.addView(button(pageSites[key]?.name ?: "Page", key == selectedKey) { selectedKey = key; browser = page; renderSiteBar(); applyAudio() })
             controls.addView(button("▣", mainPane == key) { mainPane = if (mainPane == key) "" else key; renderPages() }.apply { contentDescription = "Toggle main pane" })
             controls.addView(button("♫") { selectedKey = key; browser = page; volumeDialog(key) })
@@ -284,9 +299,9 @@ class MainActivity : Activity() {
             pane.addView(page, LinearLayout.LayoutParams(-1, 0, 1f))
             stage.addView(pane, lp)
             page.onResume()
-            page.setOnFocusChangeListener { _, focused -> if (focused) { selectedKey = key; browser = page; applyAudio() } }
+            page.setOnFocusChangeListener { _, focused -> if (focused) { selectedKey = key; browser = page; renderSiteBar(); applyAudio() } }
             page.visibility = View.VISIBLE
-            page.alpha = if (key == selectedKey) 1f else 0.96f
+            page.alpha = 1f
         }
         pages.filterKeys { it !in open }.values.forEach { it.onPause() }
         applyAudio()
@@ -315,6 +330,15 @@ class MainActivity : Activity() {
             addState(intArrayOf(android.R.attr.state_focused), shape(if (primary) gold else Color.rgb(41, 49, 61), gold))
             addState(intArrayOf(android.R.attr.state_pressed), shape(if (primary) gold else Color.rgb(41, 49, 61), gold))
             addState(intArrayOf(), shape(if (primary) gold else panel, if (primary) gold else Color.rgb(34, 48, 66)))
+        }
+    }
+    private fun tabBackground(open: Boolean, focused: Boolean): android.graphics.drawable.StateListDrawable {
+        fun shape(highlight: Boolean) = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
+            if (open) intArrayOf(Color.rgb(55,46,27), Color.rgb(29,27,23)) else intArrayOf(Color.rgb(24,34,47), panel)).apply {
+            cornerRadius = dp(24).toFloat(); setStroke(dp(1), if (highlight || focused) gold else if (open) Color.rgb(128,104,51) else Color.rgb(36,50,70))
+        }
+        return android.graphics.drawable.StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_focused), shape(true)); addState(intArrayOf(android.R.attr.state_pressed), shape(true)); addState(intArrayOf(), shape(false))
         }
     }
 
@@ -508,7 +532,7 @@ class MainActivity : Activity() {
             content.removeAllViews()
             when (n) {
                 0 -> {
-                    heading("App", "Football Arena · Android preview 1.8.5")
+                    heading("App", "Football Arena · Android preview 1.8.6")
                     row("Restore session", "Remember the last page and layout.", "restore", true)
                     row("Passcode", "Ask for a four-digit code when the app starts.", action = { changePass() })
                     row("Export sites", "Save a JSON file compatible with the desktop app.", action = { documentPicker(true) })
