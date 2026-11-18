@@ -106,7 +106,7 @@ class MainActivity : Activity() {
             settings.domStorageEnabled = true
             settings.mediaPlaybackRequiresUserGesture = false
             settings.loadsImagesAutomatically = true
-            settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            configureBrowser(this)
             settings.userAgentString = settings.userAgentString.replace("; wv", "")
             webViewClient = pageClient
             webChromeClient = videoClient()
@@ -191,7 +191,7 @@ class MainActivity : Activity() {
         settings.domStorageEnabled = true
         settings.mediaPlaybackRequiresUserGesture = false
         settings.loadsImagesAutomatically = true
-        settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+        configureBrowser(this)
         settings.userAgentString = settings.userAgentString.replace("; wv", "")
         webViewClient = pageClient
         webChromeClient = videoClient()
@@ -206,7 +206,7 @@ class MainActivity : Activity() {
         open.forEachIndexed { i, key ->
             val page = pages[key] ?: return@forEachIndexed
             val col = i % cols; val row = i / cols
-            val lp = GridLayout.LayoutParams(GridLayout.spec(row, 1, 1f), GridLayout.spec(col, 1, 1f)).apply {
+            val lp = GridLayout.LayoutParams(GridLayout.spec(row, 1, GridLayout.FILL, 1f), GridLayout.spec(col, 1, GridLayout.FILL, 1f)).apply {
                 width = 0; height = 0; setMargins(dp(1), dp(1), dp(1), dp(1))
             }
             stage.addView(page, lp)
@@ -244,6 +244,13 @@ class MainActivity : Activity() {
         popup.menu.add(if (prefs.getBoolean("autoskip", true)) "Disable auto-skip" else "Enable auto-skip").setOnMenuItemClickListener { prefs.edit().putBoolean("autoskip", !prefs.getBoolean("autoskip", true)).apply(); true }
         popup.menu.add(if (prefs.getBoolean("restore", true)) "Do not restore last page" else "Restore last page").setOnMenuItemClickListener { prefs.edit().putBoolean("restore", !prefs.getBoolean("restore", true)).apply(); true }
         popup.menu.add("Share current page").setOnMenuItemClickListener { sharePage(); true }
+        popup.menu.add("Open current page in browser").setOnMenuItemClickListener {
+            val url = browser.url
+            if (url != null && (url.startsWith("https://") || url.startsWith("http://"))) try {
+                startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)))
+            } catch (_: Exception) { toast("No external browser is installed") }
+            true
+        }
         popup.menu.add("Edit selected site").setOnMenuItemClickListener { sites.firstOrNull { it.id == selectedKey }?.let { editSite(it) }; true }
         popup.menu.add("Mute / unmute selected pane").setOnMenuItemClickListener { prefs.edit().putBoolean("mute-$selectedKey", !prefs.getBoolean("mute-$selectedKey", false)).apply(); applyAudio(); true }
         popup.menu.add("Only focused pane plays sound").apply { isCheckable = true; isChecked = prefs.getBoolean("focusAudio", false); setOnMenuItemClickListener { prefs.edit().putBoolean("focusAudio", !isChecked).apply(); applyAudio(); true } }
@@ -304,6 +311,18 @@ class MainActivity : Activity() {
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+    private fun configureBrowser(view: WebView) {
+        // Third-party players often use cookies and HTTP media within HTTPS pages.
+        // Keep certificate validation and the normal WebView origin protections intact.
+        view.settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+        view.settings.useWideViewPort = true
+        view.settings.loadWithOverviewMode = true
+        view.settings.allowFileAccess = false
+        view.settings.allowContentAccess = false
+        CookieManager.getInstance().setAcceptCookie(true)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(view, true)
+        if (android.os.Build.VERSION.SDK_INT >= 29) view.isForceDarkAllowed = false
+    }
     private fun closePane() {
         val page = pages.remove(selectedKey) ?: return
         (page.parent as? android.view.ViewGroup)?.removeView(page); page.destroy()
