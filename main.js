@@ -424,7 +424,9 @@ function applySettings(old) {
   }
 }
 ipcMain.handle("settings:set", (e, patch) => {
-  if (!fromWin(e) || locked) return pub();
+  if (!fromWin(e)) return pub();
+  // First-launch language selection also works before the parental code is entered.
+  if (locked && (!patch || !["tr", "en"].includes(patch.language) || Object.keys(patch).some(k => !["language", "languageChosen"].includes(k)))) return pub();
   const old = S; S = cfgmod.merge(S, patch); saveS();
   try { applySettings(old); } catch (err) { console.error("applySettings:", err && err.message); }
   const v = pub(); send("settings:changed", v); return v;
