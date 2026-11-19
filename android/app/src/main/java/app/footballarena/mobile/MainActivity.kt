@@ -60,6 +60,7 @@ class MainActivity : Activity() {
     private var routingGeneration = 0
     private var routingReady = false
     private val pendingNavigations = linkedMapOf<WebView, String>()
+    private val desktopRedirects = mutableMapOf<WebView, Pair<String, Long>>()
     private fun routingMode() = prefs.getString("dpiMode", "auto") ?: "auto"
     private var leanback = false
     private val bg = Color.rgb(11, 15, 20)
@@ -241,6 +242,16 @@ class MainActivity : Activity() {
                 }
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     val u = request.url.toString()
+                    val desktop = desktopUrl(view, u)
+                    if (request.isForMainFrame && request.method == "GET" && desktop != u) {
+                        val previous = desktopRedirects[view]
+                        val now = android.os.SystemClock.elapsedRealtime()
+                        if (previous?.first != desktop || now - previous.second > 10000) {
+                            desktopRedirects[view] = desktop to now
+                            loadPage(view, desktop)
+                            return true
+                        }
+                    }
                     request.url.host?.let { host -> viewSites[view]?.let { automaticRoutes.registerHost(it, host) } }
                     return !(u.startsWith("https://") || u.startsWith("http://"))
                 }
@@ -478,7 +489,17 @@ class MainActivity : Activity() {
         status.text = "Loading…"; renderSiteBar(); renderPages(); loadPage(browser, url)
     }
     private fun loadPage(page: WebView, url: String) {
-        if (routingReady) page.loadUrl(url) else pendingNavigations[page] = url
+        if (SiteBrowserPolicy.usesDesktop(viewSites[page])) {
+            val agent = SiteBrowserPolicy.desktopAgent(WebSettings.getDefaultUserAgent(this))
+            if (page.settings.userAgentString != agent) page.settings.userAgentString = agent
+        }
+        val target = desktopUrl(page, url)
+        if (routingReady) page.loadUrl(target) else pendingNavigations[page] = target
+    }
+    private fun desktopUrl(page: WebView, url: String): String {
+        val id = viewSites[page]
+        val configured = sites.firstOrNull { it.id == id }?.url ?: id?.let { pageSites[it]?.url } ?: url
+        return SiteBrowserPolicy.desktopUrl(id, url, configured)
     }
     private fun routingPrepared(reload: Boolean) {
         routingReady = true
@@ -810,6 +831,7 @@ class MainActivity : Activity() {
     private fun closePane() {
         val page = pages.remove(selectedKey) ?: return
         pendingNavigations.remove(page)
+        desktopRedirects.remove(page)
         bypassPages.remove(page)
         errorLabels.remove(page); loadErrors.remove(page); historyButtons.remove(page)
         addresses.remove(page)

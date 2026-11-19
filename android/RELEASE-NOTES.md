@@ -1,4 +1,11 @@
-Android 1.8.17 preview
+Android 1.8.18 preview
+
+- Extra TV uses a desktop browser identity from its first request, so its desktop address and navigation select the same device profile.
+- Keep Extra TV mobile-host links on its configured desktop host without losing paths, queries or fragments.
+- Apply this compatibility profile only to Extra TV, keyed by site ID so address-list updates continue to work.
+- Includes native Android navigation tests using a mobile-redirect fixture. The site's live tablet behavior still needs confirmation.
+
+Previous stability improvements retained:
 
 - Keep existing WebViews and pane containers attached when opening, closing, focusing or rearranging panes.
 - Selecting an open site focuses it; the close button explicitly closes it.
