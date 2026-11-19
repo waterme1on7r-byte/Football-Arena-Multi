@@ -53,8 +53,10 @@ class MainActivity : Activity() {
     private lateinit var quickCount: TextView
     private lateinit var quickButton: LinearLayout
     private val brandTypeface by lazy {
-        if (android.os.Build.VERSION.SDK_INT >= 26) Typeface.Builder(assets, "fonts/big_shoulders_display.ttf").setFontVariationSettings("'wght' 900").build()
-        else Typeface.create(Typeface.createFromAsset(assets, "fonts/big_shoulders_display.ttf"), Typeface.BOLD)
+        runCatching {
+            if (android.os.Build.VERSION.SDK_INT >= 26) Typeface.Builder(assets, "fonts/big_shoulders_display.ttf").setFontVariationSettings("'wght' 900").build()
+            else Typeface.create("sans-serif-condensed", Typeface.BOLD)
+        }.getOrElse { Typeface.create("sans-serif-condensed", Typeface.BOLD) }
     }
     private val pages = linkedMapOf<String, WebView>()
     private val paneViews = linkedMapOf<String, LinearLayout>()
@@ -212,6 +214,7 @@ class MainActivity : Activity() {
         listOf("Auto", "1", "2", "3", "4").forEachIndexed { n, label ->
             val b = headerButton(label, n == layoutCount) { setLayout(n) }.apply { layoutParams = LinearLayout.LayoutParams(dp(if (n == 0) 80 else 30), dp(if (leanback) 44 else 36)); setPadding(dp(6), 0, dp(6), 0) }
             b.background = layoutBackground(n == layoutCount)
+            b.setTextColor(if (n == layoutCount) bg else Color.rgb(134,150,168))
             layoutButtons.add(b); segment.addView(b)
         }
         tools.addView(segment)
@@ -369,7 +372,7 @@ class MainActivity : Activity() {
                 background = tabBackground(isOpen, s.id == selectedKey); setAddStatesFromChildren(true); isSelected = isOpen
             }
             val name = headerButton(s.name) { openSite(s) }.apply {
-                setTextColor(if (isOpen) gold else text); typeface = Typeface.DEFAULT_BOLD; maxWidth = dp(180)
+                setTextColor(if (isOpen) gold else this@MainActivity.text); typeface = Typeface.DEFAULT_BOLD; maxWidth = dp(180)
                 setBackgroundColor(Color.TRANSPARENT); setPadding(dp(2), 0, dp(6), 0)
                 setCompoundDrawablesWithIntrinsicBounds(SiteInitialBadge(s.name, dp(20)), null, null, null); compoundDrawablePadding = dp(7)
                 contentDescription = "${s.name}, ${if (isOpen) "open" else "closed"}${if (s.id == selectedKey) ", focused" else ""}"
@@ -509,7 +512,7 @@ class MainActivity : Activity() {
         applyAudio()
     }
 
-    private fun setLayout(n: Int) { mainPane = ""; layoutCount = n; prefs.edit().putInt("layout", n).apply(); layoutButtons.forEachIndexed { i, b -> b.background = layoutBackground(i == n); b.setTextColor(if (i == n) bg else text) }; renderPages() }
+    private fun setLayout(n: Int) { mainPane = ""; layoutCount = n; prefs.edit().putInt("layout", n).apply(); layoutButtons.forEachIndexed { i, b -> b.background = layoutBackground(i == n); b.setTextColor(if (i == n) bg else Color.rgb(134,150,168)) }; renderPages() }
     private fun openUrl(url: String) {
         if (!(url.startsWith("https://") || url.startsWith("http://"))) return
         selected = url
