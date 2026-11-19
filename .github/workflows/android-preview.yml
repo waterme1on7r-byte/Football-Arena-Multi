@@ -1,6 +1,11 @@
 name: Android preview and native UI checks
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing Android tag to publish after successful checks
+        required: false
+        default: ''
   push:
     tags: ['android-v*']
 permissions:
@@ -35,9 +40,9 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: |
             adb shell wm size 1920x1200
-            adb shell wm density 160
+            adb shell wm density 240
             gradle -p android connectedDebugAndroidTest
-            adb pull /sdcard/Android/data/app.footballarena.mobile/files/ui-check ui-check
+            adb pull /data/local/tmp/football-arena-ui ui-check
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -47,10 +52,11 @@ jobs:
             android/app/build/reports/
             ui-check/
       - name: Publish Android preview only
-        if: startsWith(github.ref, 'refs/tags/android-v')
+        if: startsWith(github.ref, 'refs/tags/android-v') || startsWith(inputs.release_tag, 'android-v')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
           cp android/app/build/outputs/apk/debug/app-debug.apk Football-Arena-Android-1.8.12.apk
           zip -r android-ui-checks.zip ui-check
-          gh release create "$GITHUB_REF_NAME" Football-Arena-Android-1.8.12.apk android-ui-checks.zip --prerelease --latest=false --title "Android 1.8.12 preview" --notes "Android-only: compact pane controls, responsive address bars, content-sized dark/gold dialogs, flag language picker, and TLS handshake fallback. Desktop releases are unchanged."
+          gh release create "$RELEASE_TAG" Football-Arena-Android-1.8.12.apk android-ui-checks.zip --prerelease --latest=false --title "Android 1.8.12 preview" --notes "Android-only: compact pane controls, responsive address bars, content-sized dark/gold dialogs, flag language picker, and TLS handshake fallback. Desktop releases are unchanged."

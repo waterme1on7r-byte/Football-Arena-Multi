@@ -1,6 +1,5 @@
 package app.footballarena.mobile
 
-import android.graphics.Bitmap
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebView
@@ -11,7 +10,6 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.io.File
 
 @RunWith(AndroidJUnit4::class)
 class NativeLayoutTest {
@@ -19,10 +17,10 @@ class NativeLayoutTest {
     private fun children(view: View): List<View> = listOf(view) + if (view is ViewGroup) (0 until view.childCount).flatMap { children(view.getChildAt(it)) } else emptyList()
     private fun screenshot(name: String) {
         instrumentation.waitForIdleSync()
-        val bitmap = instrumentation.uiAutomation.takeScreenshot()
-        val folder = File(instrumentation.targetContext.getExternalFilesDir(null), "ui-check").apply { mkdirs() }
-        File(folder, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-        bitmap.recycle()
+        // The Gradle test runner uninstalls the app afterward; shell-owned output survives cleanup.
+        for (command in listOf("mkdir -p /data/local/tmp/football-arena-ui", "screencap -p /data/local/tmp/football-arena-ui/$name.png")) {
+            android.os.ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand(command)).use { it.readBytes() }
+        }
     }
 
     @Test fun tabletControlsAndContentSizedPopups() {
