@@ -21,7 +21,7 @@ object AdRules {
         popads.net popcash.net propellerads.com propu.sh onclickads.net onclkds.com
         profitableratecpm.com highperformanceformat.com effectivegatecpm.com effectiveratecpm.com
         adsterra.com juicyads.com exoclick.com exosrv.com exdynsrv.com trafficjunky.net clickadu.com
-        hilltopads.net adcash.com ad-maven.com admaven.com adsco.re yandexadexchange.net an.yandex.ru
+        hilltopads.net adcash.com ad-maven.com admaven.com adsco.re yandexadexchange.net an.yandex.ru traffmovie.com
     """.trim().split(Regex("\\s+")).toSet()
     private val paths = Regex("(/pagead/|/adserver|/adsbygoogle|/vast[/.?_-]|/preroll|/pre-roll|/popunder|/popads|/ima3\\.js|/ads/(banner|js|video))", RegexOption.IGNORE_CASE)
     fun blocks(url: String): Boolean = runCatching {

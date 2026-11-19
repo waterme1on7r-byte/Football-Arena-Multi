@@ -1,4 +1,14 @@
-Android 1.8.29 preview
+Android 1.8.30 preview
+
+- Fix live-site advertising missed by network-only rules: remove observed first-party banner slots, external promotional banner images, Arda ad zones, Patron promotional bars and Mahsun's bonus-wheel control.
+- Block the traffmovie.com ad network observed on Arda, including subdomains.
+- Recognize the actual Netspor/Mahsun pre-roll structure and use its existing skip control to initialize the main player. Do not merely hide the pre-roll and leave a blank player.
+- Support play-triangle suffixes on skip labels and avoid seeking hidden ad videos after the match has started.
+- Assign stable site profiles before navigation so rotating domains and embedded frames retain the correct rules.
+- Add hidden-promotional-element counts alongside network-block counters in diagnostics.
+- Add public live-site Android checks with before/after screenshots for Arda, Netspor, Mahsun and Patron. Unreachable/challenged live sites are explicitly reported as skipped rather than verified.
+
+Previous improvements retained:
 
 - Load a bundled Peter Lowe advertising/tracking-host snapshot (3,568 domains) alongside existing network rules, with domain-boundary matching.
 - Apply the same blocking preference to page/frame requests, ad navigations, new-window links and service-worker fetches. Blocked responses are not cached.

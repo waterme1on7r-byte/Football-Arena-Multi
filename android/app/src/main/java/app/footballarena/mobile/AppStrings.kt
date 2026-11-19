@@ -23,6 +23,7 @@ object AppStrings {
             "Ad blocking diagnostics" to "Reklam engelleme tanılaması",
             "Check blocking activity and embedded-player support." to "Engelleme etkinliğini ve gömülü oynatıcı desteğini kontrol edin.",
             "Advertising domains" to "Reklam alan adları",
+            "Promotional elements hidden on this page" to "Bu sayfada gizlenen reklam öğeleri",
             "Requests blocked this session" to "Bu oturumda engellenen istekler",
             "Service-worker requests blocked" to "Engellenen servis çalışanı istekleri",
             "Skip buttons pressed on this page" to "Bu sayfada basılan reklam atlama düğmeleri",

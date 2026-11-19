@@ -40,6 +40,50 @@ class AutoSkipIntegrationTest {
         MainActivity::class.java.getDeclaredMethod("renderPages").apply { isAccessible = true }.invoke(a)
         return page
     }
+    @Test fun observedNetsporBannersAndHiddenPrerollControlAreHandledWithoutBlankingThePlayer() {
+        prepare()
+        val root = """<html><body>
+            <div class="banner-container"><a href="/"><img id="logo" alt="Netspor" width="100" height="30"></a></div>
+            <div class="banner-container fullwidth"><a href="https://promo.invalid/"><img alt="Banner" width="300" height="90"></a></div>
+            <iframe id="videoPlayer" src="https://player.example/event.html" width="500" height="300"></iframe>
+            <script>window.token=Math.random();window.original=window.token;addEventListener('message',e=>{if(e.data==='main-player-started')window.started=true;});</script>
+            </body></html>"""
+        val player = """<html><head><style>#skip-ad-btn{display:none}#preroll-container{width:300px;height:180px}</style></head><body>
+            <div id="preroll-container"><video id="preroll-video"></video><button id="skip-ad-btn" onclick="skipAd(event)">Reklamı Geç ▶</button></div>
+            <div id="player-container" style="display:none"><video id="match"></video></div>
+            <div id="splash-banner"><a href="https://promo.invalid/"><img width="300" height="60"></a></div>
+            <script>function skipAd(e){e.preventDefault();e.stopPropagation();document.getElementById('preroll-container').style.display='none';document.getElementById('player-container').style.display='block';parent.postMessage('main-player-started','*');}</script>
+            </body></html>"""
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            lateinit var page: WebView
+            scenario.onActivity { a ->
+                page=create(a) { if(it.url.host=="player.example") player else root }
+                val owners=MainActivity::class.java.getDeclaredField("viewSites").apply { isAccessible=true }.get(a)
+                @Suppress("UNCHECKED_CAST") (owners as MutableMap<WebView,String>)[page]="netspor"
+                MainActivity::class.java.getDeclaredField("routingReady").apply { isAccessible=true }.setBoolean(a,true)
+                MainActivity::class.java.getDeclaredMethod("loadPage",WebView::class.java,String::class.java).apply { isAccessible=true }.invoke(a,page,"https://rotated.example/")
+            }
+            awaitJs(scenario,page,"window.started===true&&getComputedStyle(document.querySelector('.banner-container.fullwidth')).display==='none'&&getComputedStyle(logo).display!=='none'&&videoPlayer.getBoundingClientRect().width>0&&window.token===window.original")
+            scenario.onActivity { a ->
+                a.getSharedPreferences("football-arena",0).edit().putBoolean("adblock",false).putBoolean("autoskip",false).commit()
+                MainActivity::class.java.getDeclaredMethod("runAutoSkip",WebView::class.java).apply { isAccessible=true }.invoke(a,page)
+            }
+            awaitJs(scenario,page,"getComputedStyle(document.querySelector('.banner-container.fullwidth')).display!=='none'&&window.started===true&&window.token===window.original")
+        }
+    }
+    @Test fun observedArdaZonesAreHiddenWhilePlayerAndScoreboardRemain() {
+        prepare()
+        val root="""<html><body>
+            <div id="zone_1717130822"><a href="https://z.cdn.traffmovie.com/go"><img width="300" height="300"></a></div>
+            <div id="zone_info">Scoreboard</div>
+            <div id="zone_123"><iframe id="playerFrame" src="https://player.example/channel" width="500" height="300"></iframe></div>
+            </body></html>"""
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            lateinit var page: WebView
+            scenario.onActivity { a -> page=create(a) { if(it.url.host=="player.example") "<html><body>Match player</body></html>" else root }; page.loadUrl("https://ardaspor99.example/") }
+            awaitJs(scenario,page,"getComputedStyle(document.getElementById('zone_1717130822')).display==='none'&&getComputedStyle(zone_info).display!=='none'&&getComputedStyle(document.getElementById('zone_123')).display!=='none'&&playerFrame.getBoundingClientRect().width>0")
+        }
+    }
     @Test fun uppercaseLabelsIconButtonsAndCountdownsWorkWithoutMutingOrSeekingTheMatch() {
         prepare()
         val html = """<html><body>

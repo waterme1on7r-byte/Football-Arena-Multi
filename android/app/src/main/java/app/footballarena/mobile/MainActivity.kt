@@ -579,6 +579,8 @@ class MainActivity : Activity() {
         }.show()
     }
     private fun loadPage(page: WebView, url: String) {
+        // Page ownership is assigned after createPage(); install its site rules before navigating.
+        installContentScript(page)
         if (SiteBrowserPolicy.usesDesktop(viewSites[page])) {
             val agent = SiteBrowserPolicy.desktopAgent(WebSettings.getDefaultUserAgent(this))
             if (page.settings.userAgentString != agent) page.settings.userAgentString = agent
@@ -725,14 +727,14 @@ class MainActivity : Activity() {
     private fun runAutoSkip(view: WebView = browser) {
         applyAudio()
         try {
-            view.evaluateJavascript(contentSettings() + adSkipScript + ";window.__faApplyContentSettings&&window.__faApplyContentSettings({skipOff:window.__faAdOff,blockAds:window.__faBlockAds});", null)
+            view.evaluateJavascript(contentSettings(view) + adSkipScript + ";window.__faApplyContentSettings&&window.__faApplyContentSettings({skipOff:window.__faAdOff,blockAds:window.__faBlockAds});", null)
         } catch (_: Exception) { }
     }
-    private fun contentSettings() = "window.__faAdOff=${!prefs.getBoolean("autoskip", true)};window.__faBlockAds=${prefs.getBoolean("adblock", true)};"
+    private fun contentSettings(view: WebView) = "window.__faSiteId=${JSONObject.quote(viewSites[view] ?: "")};window.__faAdOff=${!prefs.getBoolean("autoskip", true)};window.__faBlockAds=${prefs.getBoolean("adblock", true)};"
     private fun installContentScript(view: WebView) {
         contentScripts.remove(view)?.remove()
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-            val script = contentSettings() + adSkipScript
+            val script = contentSettings(view) + adSkipScript
             contentScripts[view] = androidx.webkit.WebViewCompat.addDocumentStartJavaScript(view, script, setOf("*"))
         }
     }
@@ -752,6 +754,7 @@ class MainActivity : Activity() {
                 "",
                 AppStrings.t("Auto-skip") + ": " + state("autoskip"),
                 AppStrings.t("Skip buttons pressed on this page") + ": " + stats.optInt("skipActions"),
+                AppStrings.t("Promotional elements hidden on this page") + ": " + stats.optInt("hiddenPromotions"),
                 AppStrings.t("Embedded-player support") + ": " + AppStrings.t(if (frameSupport) "Available" else "Update Android System WebView for embedded-player auto-skip."),
                 "WebView: ${engine ?: "Unknown"}"
             )

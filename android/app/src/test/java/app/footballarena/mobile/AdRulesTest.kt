@@ -17,6 +17,9 @@ class AdRulesTest {
     }
     @Test fun coversDesktopAdvertisingRulesWithoutBlockingPlayers() {
         assertTrue(AdRules.blocks("https://delivery.popads.net/pop.js"))
+        assertTrue(AdRules.blocks("https://z.cdn.traffmovie.com/load?z=1717130822"))
+        assertTrue(AdRules.blocks("https://d7.cdn.traffmovie.com/uploads/media/banner.gif"))
+        assertFalse(AdRules.blocks("https://nottraffmovie.com/live.m3u8"))
         assertTrue(AdRules.blocks("https://cdn.example.org/vast/preroll.xml"))
         assertTrue(AdRules.blocks("https://imasdk.googleapis.com/js/sdkloader/ima3.js"))
         assertFalse(AdRules.blocks("https://notpopads.net/player.js"))
