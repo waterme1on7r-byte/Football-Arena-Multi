@@ -3,7 +3,7 @@
   const catalog = globalThis.FA_TRANSLATIONS || {};
   let language = (globalThis.arena?.cfg || globalThis.host?.cfg || {}).language || "tr";
   const texts = new WeakMap(), attrs = new WeakMap();
-  const excluded = "script,style,textarea,.chip .nm,.qrow .txt,.bar b,.msg .nm,.msg .txt:not(.unsup),.quote,.bn,#reply b,#reply span,.avatarChoice span,input";
+  const excluded = "script,style,textarea,[data-i18n-ignore],.chip .nm,.qrow .txt,.bar b,.msg .nm,.msg .txt:not(.unsup),.quote,.bn,#reply b,#reply span,.avatarChoice span,input";
   const escape = s => s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
   const phrases = Object.keys(catalog).filter(s=>!s.includes("{0}")).sort((a,b) => b.length-a.length);
   const templates = Object.keys(catalog).filter(s=>s.includes("{0}")).map(key=>[new RegExp("^"+key.split(/\{\d+\}/).map(escape).join("(.+?)")+"$"),catalog[key]]);
@@ -49,13 +49,31 @@
     const bridge=globalThis.arena || globalThis.host;
     (bridge?.onCfg || bridge?.onSettings)?.(cfg => { if(cfg.language && cfg.language!==language){language=cfg.language;apply();} });
     if(globalThis.arena && !arena.cfg.languageChosen) {
-      const d=document.createElement("dialog"); d.className="sdlg";
-      const heading=document.createElement("h2"); heading.textContent="Choose language";
-      const select=document.createElement("select"); select.setAttribute("aria-label","Language");
-      for(const [value,label] of [["tr","Türkçe"],["en","English"]]) { const option=document.createElement("option"); option.value=value;option.textContent=label;select.append(option); }
-      select.value=language;
-      const save=document.createElement("button");save.className="primary";save.textContent="Continue";save.onclick=async()=>{await setLanguage(select.value);d.close();d.remove();};
-      d.addEventListener("cancel",e=>e.preventDefault()); d.append(heading,select,save);document.body.append(d);
+      const d=document.createElement("dialog"); d.className="language-dialog";
+      d.setAttribute("aria-labelledby","languageTitle");d.setAttribute("data-i18n-ignore","");
+      const header=document.createElement("div");header.className="language-header";
+      const logo=document.querySelector(".brand svg")?.cloneNode(true);if(logo){logo.setAttribute("aria-hidden","true");header.append(logo);}
+      const brand=document.createElement("strong");brand.textContent="FOOTBALL ARENA";header.append(brand);
+      const body=document.createElement("div");body.className="language-body";
+      const heading=document.createElement("h2");heading.id="languageTitle";heading.textContent="DİL / LANGUAGE";
+      const subtitle=document.createElement("p");subtitle.className="language-subtitle";
+      subtitle.append(document.createTextNode("Football Arena için dil seçin."),document.createElement("br"),document.createTextNode("Select a language for Football Arena."));
+      const choices=document.createElement("div");choices.className="language-options";choices.setAttribute("role","group");choices.setAttribute("aria-label","Dil / Language");
+      let selected=language;
+      const buttons=[];
+      const save=document.createElement("button");save.className="primary language-continue";
+      const note=document.createElement("p");note.className="language-note";
+      const error=document.createElement("p");error.className="language-error";error.setAttribute("role","alert");error.hidden=true;
+      function paint(){buttons.forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.language===selected)));save.textContent=selected==="tr"?"Devam et →":"Continue →";note.textContent=selected==="tr"?"Tercihiniz kaydedilir. Ayarlar’dan değiştirebilirsiniz.":"Your preference is saved. Change it anytime in Settings.";}
+      for(const [value,label,flag] of [["tr","Türkçe","tr"],["en","English","us"]]) {
+        const button=document.createElement("button");button.type="button";button.dataset.language=value;
+        const image=document.createElement("img");image.src="flags/"+flag+".svg";image.alt=flag==="tr"?"Türkiye":"United States";
+        const text=document.createElement("span");text.textContent=label;button.append(image,text);
+        button.onclick=()=>{selected=value;error.hidden=true;paint();};buttons.push(button);choices.append(button);
+      }
+      save.onclick=async()=>{save.disabled=true;try{await setLanguage(selected);d.close();d.remove();}catch{error.textContent=selected==="tr"?"Dil kaydedilemedi. Lütfen tekrar deneyin.":"Could not save your language. Please try again.";error.hidden=false;}finally{save.disabled=false;}};
+      paint();body.append(heading,subtitle,choices,save,note,error);d.append(header,body);
+      d.addEventListener("cancel",e=>e.preventDefault());document.body.append(d);
       d.addEventListener("close",()=>globalThis.FAI?.refreshOverlay());
       if(globalThis.FAI) FAI.showDialog(d);else d.showModal();
     }
