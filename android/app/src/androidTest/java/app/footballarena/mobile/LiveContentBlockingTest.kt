@@ -11,7 +11,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import org.json.JSONArray
 import org.json.JSONObject
 
 /** Public live-site checks. Unreachable/challenged sites are reported as skipped, never as verified. */
@@ -19,15 +18,15 @@ import org.json.JSONObject
 class LiveContentBlockingTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private fun field(name:String)=MainActivity::class.java.getDeclaredField(name).apply { isAccessible=true }
-    private fun evaluate(scenario:ActivityScenario<MainActivity>, page:WebView, script:String):String {
+    private fun evaluate(page:WebView, script:String):String {
         var value="null"; val latch=CountDownLatch(1)
-        scenario.onActivity { page.evaluateJavascript(script) { value=it;latch.countDown() } }
+        instrumentation.runOnMainSync { page.evaluateJavascript(script) { value=it;latch.countDown() } }
         latch.await(3,TimeUnit.SECONDS);return value
     }
-    private fun awaitBoolean(scenario:ActivityScenario<MainActivity>,page:WebView,script:String,timeout:Long=30000):Boolean {
+    private fun awaitBoolean(page:WebView,script:String,timeout:Long=30000):Boolean {
         val deadline=SystemClock.elapsedRealtime()+timeout
         while(SystemClock.elapsedRealtime()<deadline) {
-            if(evaluate(scenario,page,script)=="true")return true
+            if(evaluate(page,script)=="true")return true
             Thread.sleep(250)
         }
         return false
@@ -50,21 +49,23 @@ class LiveContentBlockingTest {
                 MainActivity::class.java.declaredMethods.single { it.name=="openSite" }.apply { isAccessible=true }.invoke(activity,site)
                 page=field("browser").get(activity) as WebView
             }
+            try {
             val selector=JSONObject.quote(playerSelector)
-            val reachable=awaitBoolean(scenario,page,"!!document.querySelector($selector)")
+            val reachable=awaitBoolean(page,"!!document.querySelector($selector)")
             if(!reachable)screenshot("live-$id-unavailable")
             assumeTrue("Live $id was unreachable or challenged; no live-ad result is claimed",reachable)
-            evaluate(scenario,page,"window.__faLiveDocumentToken='${java.util.UUID.randomUUID()}';window.__faLiveOriginalToken=window.__faLiveDocumentToken;true")
+            evaluate(page,"window.__faLiveDocumentToken='${java.util.UUID.randomUUID()}';window.__faLiveOriginalToken=window.__faLiveDocumentToken;true")
             // Wait for an actual promotion where possible; a site may not return an ad for this location.
             val ads=JSONObject.quote(adSelector)
-            awaitBoolean(scenario,page,"Array.from(document.querySelectorAll($ads)).some(e=>e.getBoundingClientRect().height>0)",10000)
+            awaitBoolean(page,"Array.from(document.querySelectorAll($ads)).some(e=>e.getBoundingClientRect().height>0)",10000)
             screenshot("live-$id-before")
-            scenario.onActivity { activity ->
+            instrumentation.runOnMainSync {
+                val activity=page.context as MainActivity
                 activity.getSharedPreferences("football-arena",0).edit().putBoolean("adblock",true).putBoolean("autoskip",true).commit()
                 MainActivity::class.java.getDeclaredMethod("installContentScript",WebView::class.java).apply { isAccessible=true }.invoke(activity,page)
                 MainActivity::class.java.getDeclaredMethod("runAutoSkip",WebView::class.java).apply { isAccessible=true }.invoke(activity,page)
             }
-            val cleaned=awaitBoolean(scenario,page,"""(()=>{
+            val cleaned=awaitBoolean(page,"""(()=>{
                 const player=document.querySelector($selector);
                 return Array.from(document.querySelectorAll($ads)).every(e=>e.getBoundingClientRect().height===0)
                     &&player&&player.getBoundingClientRect().width>0&&player.getBoundingClientRect().height>0
@@ -74,7 +75,7 @@ class LiveContentBlockingTest {
             screenshot("live-$id-after")
             assertTrue("Live $id still has visible banners or lost its player",cleaned)
             if(preRoll) {
-                val skipped=awaitBoolean(scenario,page,"""(()=>{try{
+                val skipped=awaitBoolean(page,"""(()=>{try{
                     const frame=document.querySelector($selector);const doc=frame.contentDocument;
                     const ad=doc&&doc.querySelector('#preroll-container');const main=doc&&doc.querySelector('#player-container');
                     return !!ad&&!!main&&frame.contentWindow.getComputedStyle(ad).display==='none'
@@ -82,6 +83,10 @@ class LiveContentBlockingTest {
                 }catch(e){return false;}})()""",45000)
                 screenshot("live-$id-player-after")
                 assertTrue("Live $id did not transition from its custom pre-roll to the main player",skipped)
+            }
+            } finally {
+                // Finish before ActivityScenario.close(), which otherwise waits for animated pages to idle.
+                instrumentation.runOnMainSync { (page.context as MainActivity).finish() }
             }
         }
     }

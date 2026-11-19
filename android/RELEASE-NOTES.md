@@ -1,4 +1,4 @@
-Android 1.8.32 preview
+Android 1.8.33 preview
 
 - Fix live-site advertising missed by network-only rules: remove observed first-party banner slots, external promotional banner images, Arda ad zones, Patron promotional bars and Mahsun's bonus-wheel control.
 - Block the traffmovie.com ad network observed on Arda, including subdomains.
