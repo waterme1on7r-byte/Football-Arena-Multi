@@ -1,5 +1,4 @@
-// Runs inside every page and frame of a site: presses "Reklamı geç" / "Skip ad" as soon as it
-// becomes available, fast-forwards short ad videos and hides pre-roll overlays.
+// Installed at document start in every frame, including cross-origin video players.
 (() => {
   if (window.__faAd) return; window.__faAd = true;
   const STRICT = [/^reklam[ıi]\s*(ge[cç]|atla|kapat)(\s*[›>»])?$/, /^skip\s*ads?(\s*[›>»])?$/, /^ad\s*skip$/];
@@ -37,11 +36,20 @@
     }
   }
   const style = document.createElement("style");
-  style.textContent = '[class*="preroll" i],[id*="preroll" i],[class*="pre-roll" i],[id*="pre-roll" i],[class*="popunder" i],ins.adsbygoogle,[id^="google_ads"]{display:none!important}';
+  // Never hide the player or its pre-roll container: it can also contain the match.
+  style.textContent = 'ins.adsbygoogle,[id^="google_ads"],[class~="ad-banner"],[class~="popunder"]{display:none!important}';
   (document.head || document.documentElement).append(style);
+  const sync = () => { style.disabled = !window.__faBlockAds; };
+  addEventListener("message", event => {
+    if (event.source !== window.parent || !event.data || event.data.type !== "football-arena-content-settings") return;
+    window.__faAdOff = !!event.data.skipOff; window.__faBlockAds = !!event.data.blockAds;
+    sync();
+    for (const frame of document.querySelectorAll("iframe")) frame.contentWindow?.postMessage(event.data, "*");
+  });
+  sync();
 
   let timer = 0;
   new MutationObserver(() => { clearTimeout(timer); timer = setTimeout(scan, 400); }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style", "disabled"] });
-  setInterval(scan, 1500);
+  setInterval(() => { sync(); scan(); }, 1000);
   scan();
 })();

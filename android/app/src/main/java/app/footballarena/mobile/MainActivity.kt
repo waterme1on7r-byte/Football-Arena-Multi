@@ -75,7 +75,8 @@ class MainActivity : Activity() {
     private val panel = Color.rgb(18, 25, 35)
     private val gold = Color.rgb(246, 196, 81)
     private val text = Color.rgb(233, 237, 242)
-    private val adHosts = setOf("doubleclick.net", "googlesyndication.com", "googleadservices.com", "adnxs.com", "adsrvr.org", "taboola.com", "outbrain.com")
+    private val contentScripts = mutableMapOf<WebView, androidx.webkit.ScriptHandler>()
+    private val resourceErrors = java.util.concurrent.ConcurrentHashMap<WebView, String>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -250,7 +251,7 @@ class MainActivity : Activity() {
             configureBrowser(this)
             settings.userAgentString = settings.userAgentString.replace("; wv", "")
             webViewClient = pageClient
-            webChromeClient = videoClient()
+            webChromeClient = videoClient(this)
             setDownloadListener { url, _, _, _, _ -> try { startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))) } catch (_: Exception) { toast("Cannot open this download") } }
         }
         buildStage(root)
@@ -283,14 +284,14 @@ class MainActivity : Activity() {
                 override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
                     request.url.host?.let { host -> viewSites[view]?.let { automaticRoutes.registerHost(it, host) } }
                     if (!prefs.getBoolean("adblock", true)) return null
-                    val host = request.url.host?.lowercase() ?: return null
-                    if (adHosts.any { host == it || host.endsWith(".$it") }) return WebResourceResponse("text/plain", "utf-8", 204, "No Content", emptyMap(), "".byteInputStream())
+                    if (AdRules.blocks(request.url.toString())) return WebResourceResponse("text/plain", "utf-8", 204, "No Content", emptyMap(), "".byteInputStream())
                     return null
                 }
                 override fun onPageFinished(view: WebView, url: String) {
                     super.onPageFinished(view, url)
                     historyButtons[view]?.let { it.first.isEnabled = view.canGoBack(); it.second.isEnabled = view.canGoForward() }
                     addresses[view]?.let { if (!it.hasFocus()) it.setText(url) }
+                    if (viewSites[view]?.startsWith("custom-") == true) renderSiteBar()
                     if (view === browser) {
                         selected = url
                         prefs.edit().putString("last", url).putString("lastSiteId", viewSites[view] ?: "").apply()
@@ -303,6 +304,13 @@ class MainActivity : Activity() {
                     paintDpiStatus()
                 }
                 override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+                    if (!request.isForMainFrame) resourceErrors[view] = "${request.url}\n${error.description}"
+                    if (request.isForMainFrame && error.errorCode == ERROR_UNSAFE_RESOURCE) {
+                        safetyWarnings.add(view)
+                        bypassPages.remove(view); paintDpiStatus()
+                        if (view === browser) status.text = "Security warning"
+                        return
+                    }
                     if (view in safetyWarnings) return // Keep WebView's security interstitial visible.
                     val connectionFailure = error.errorCode in setOf(ERROR_HOST_LOOKUP, ERROR_CONNECT, ERROR_IO, ERROR_TIMEOUT) || error.description.toString() in setOf("net::ERR_CONNECTION_RESET", "net::ERR_EMPTY_RESPONSE", "net::ERR_CONNECTION_CLOSED")
                     if (request.isForMainFrame && request.method == "GET" && request.url.scheme == "https" && connectionFailure && view !in safetyWarnings && routingMode() == "auto" && dpiProxy != null) {
@@ -319,13 +327,15 @@ class MainActivity : Activity() {
                 }
                 override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
                     if (request.isForMainFrame) pageFailed(view, request.url.toString(), "HTTP ${response.statusCode}: ${response.reasonPhrase}")
+                    else resourceErrors[view] = "${request.url}\nHTTP ${response.statusCode}: ${response.reasonPhrase}"
                 }
                 override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: android.net.http.SslError) {
                     handler.cancel()
                     // Reject the untrusted connection. A poisoned direct DNS answer can have a block-page certificate;
                     // try a fresh encrypted-DNS connection once, with normal certificate validation still enabled.
                     if ((view.url == error.url || addresses[view]?.text?.toString() == error.url) && retrySecureRoute(view, error.url)) return
-                    pageFailed(view, error.url, "Certificate validation failed (${error.primaryError}). Connection cancelled.")
+                    if (view.url == error.url) pageFailed(view, error.url, "Certificate validation failed (${error.primaryError}). Connection cancelled.")
+                    else resourceErrors[view] = "${error.url}\nCertificate validation failed (${error.primaryError})"
                 }
     }
     private fun retrySecureRoute(view: WebView, url: String): Boolean {
@@ -355,7 +365,7 @@ class MainActivity : Activity() {
         status.gravity = Gravity.END or Gravity.CENTER_VERTICAL; status.maxWidth = dp(300); status.setSingleLine(true); status.ellipsize = android.text.TextUtils.TruncateAt.END
         footer.addView(button("Update links") { refreshLinks(true) }, FrameLayout.LayoutParams(-2, dp(38), Gravity.START or Gravity.CENTER_VERTICAL))
         footer.addView(status, FrameLayout.LayoutParams(-2, dp(32), Gravity.END or Gravity.CENTER_VERTICAL))
-        footer.addView(TextView(this).apply { text = "WTMLJR"; setTextColor(gold); textSize = 12f; letterSpacing = .25f; gravity = Gravity.CENTER }, FrameLayout.LayoutParams(-2, dp(32), Gravity.CENTER))
+        footer.addView(TextView(this).apply { text = "h o w l . d e v"; setTextColor(gold); textSize = 12f; gravity = Gravity.CENTER }, FrameLayout.LayoutParams(-2, dp(32), Gravity.CENTER))
         root.addView(footer)
         setContentView(root)
         AppStrings.watch(root)
@@ -383,6 +393,14 @@ class MainActivity : Activity() {
                 contentDescription = AppStrings.t("Options") + " · " + s.name; textSize = 18f; setTextColor(Color.rgb(134,150,168)); setBackgroundColor(Color.TRANSPARENT); setPadding(0,0,0,0)
             }, LinearLayout.LayoutParams(dp(18), dp(if (leanback) 44 else 36)))
             listBar.addView(chip, LinearLayout.LayoutParams(-2, dp(if (leanback) 46 else 38)).apply { marginEnd = dp(5) })
+        }
+        pages.filterKeys { key -> sites.none { it.id == key } }.forEach { (key, page) ->
+            val url = page.url?.takeIf { it.startsWith("http") } ?: pendingNavigations[page] ?: pageSites[key]?.url ?: return@forEach
+            val label = android.net.Uri.parse(url).host ?: url
+            val chip = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; background = controlBackground(true); tag = "user-content" }
+            chip.addView(headerButton(label) { selectedKey = key; browser = page; renderPages(); renderSiteBar() }.apply { setTextColor(bg); setBackgroundColor(Color.TRANSPARENT); maxWidth = dp(180) })
+            chip.addView(headerButton("+") { saveTemporarySite(key, url) }.apply { contentDescription = AppStrings.t("Save site"); setTextColor(bg); setBackgroundColor(Color.TRANSPARENT) })
+            listBar.addView(chip, LinearLayout.LayoutParams(-2, dp(38)).apply { marginEnd = dp(5) })
         }
         if (::quickCount.isInitialized) {
             val count = sites.count { it.quick }; quickCount.text = count.toString()
@@ -425,7 +443,7 @@ class MainActivity : Activity() {
         configureBrowser(this)
         settings.userAgentString = settings.userAgentString.replace("; wv", "")
         webViewClient = pageClient
-        webChromeClient = videoClient()
+        webChromeClient = videoClient(this)
         setDownloadListener { url, _, _, _, _ -> try { startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))) } catch (_: Exception) { toast("Cannot open this download") } }
     }
 
@@ -515,15 +533,27 @@ class MainActivity : Activity() {
     private fun setLayout(n: Int) { mainPane = ""; layoutCount = n; prefs.edit().putInt("layout", n).apply(); layoutButtons.forEachIndexed { i, b -> b.background = layoutBackground(i == n); b.setTextColor(if (i == n) bg else Color.rgb(134,150,168)) }; renderPages() }
     private fun openUrl(url: String) {
         if (!(url.startsWith("https://") || url.startsWith("http://"))) return
+        sites.firstOrNull { it.url == url }?.let { openSite(it); return }
         selected = url
-        if (selectedKey.isBlank() || selectedKey !in pages) selectedKey = "custom-${System.currentTimeMillis()}"
+        selectedKey = "custom-${System.nanoTime()}"
         if (!pages.containsKey(selectedKey)) { val page = if (pages.isEmpty()) browser else createPage(); pages[selectedKey] = page }
         val site = sites.firstOrNull { it.url == url }
         val stableId = site?.id ?: selectedKey
+        pageSites[selectedKey] = Site(selectedKey, android.net.Uri.parse(url).host ?: url, url, custom = true)
         automaticRoutes.registerSite(stableId, url)
         browser = pages[selectedKey]!!
         viewSites[browser] = stableId
         status.text = "Loading…"; renderSiteBar(); renderPages(); loadPage(browser, url)
+    }
+    private fun saveTemporarySite(key: String, url: String): ArenaDialog? {
+        if (sites.any { it.id == key }) return null
+        val name = EditText(this).apply { setText(android.net.Uri.parse(url).host ?: url); setSingleLine(true); setTextColor(this@MainActivity.text) }
+        return ArenaDialog.Builder(this).setTitle("Save site").setView(name).setNegativeButton("Cancel", null).setPositiveButton("Save") { _, _ ->
+            if (name.text.isNotBlank() && pages.containsKey(key)) {
+                val site = Site(key, name.text.toString().trim(), url, custom = true)
+                sites.add(site); pageSites[key] = site; saveSites(); renderSiteBar()
+            }
+        }.show()
     }
     private fun loadPage(page: WebView, url: String) {
         if (SiteBrowserPolicy.usesDesktop(viewSites[page])) {
@@ -671,12 +701,20 @@ class MainActivity : Activity() {
 
     private fun runAutoSkip(view: WebView = browser) {
         applyAudio()
-        if (!prefs.getBoolean("autoskip", true)) return
         try {
+            view.evaluateJavascript(contentSettings() + "document.querySelectorAll('iframe').forEach(f=>f.contentWindow.postMessage({type:'football-arena-content-settings',skipOff:window.__faAdOff,blockAds:window.__faBlockAds},'*'));", null)
             val js = assets.open("adskip.js").bufferedReader().use { it.readText() }
             view.evaluateJavascript(js, null)
             view.postDelayed({ if (!isFinishing) try { view.evaluateJavascript(js, null) } catch (_: Exception) {} }, 1800)
         } catch (_: Exception) { }
+    }
+    private fun contentSettings() = "window.__faAdOff=${!prefs.getBoolean("autoskip", true)};window.__faBlockAds=${prefs.getBoolean("adblock", true)};"
+    private fun installContentScript(view: WebView) {
+        contentScripts.remove(view)?.remove()
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            val script = contentSettings() + "document.addEventListener('DOMContentLoaded',function(){" + assets.open("adskip.js").bufferedReader().use { it.readText() } + "},{once:true});"
+            contentScripts[view] = androidx.webkit.WebViewCompat.addDocumentStartJavaScript(view, script, setOf("*"))
+        }
     }
 
     private fun sharePage() {
@@ -745,10 +783,24 @@ class MainActivity : Activity() {
             .setItems(arrayOf("Routing mode · ${routingMode()}", "Restart routing", "Option 1 · 8-byte fragments", "Option 2 · 32-byte fragments", "Option 3 · 64-byte fragments", "Diagnostics · ${p?.connections?.get() ?: 0} routed connections", if (prefs.getBoolean("dpiTlsRecords", true)) "Try compatibility mode · preserve TLS record" else "Use TLS record fragmentation")) { _, n ->
                 if (n == 0) { routingModeDialog(); return@setItems }
                 if (n == 6) { prefs.edit().putBoolean("dpiTlsRecords", !prefs.getBoolean("dpiTlsRecords", true)).apply(); updateDpi(true); return@setItems }
-                if (n == 5) { ArenaDialog.Builder(this).setTitle("Selected site diagnostics").setMessage("Mode: ${if (prefs.getBoolean("dpiTlsRecords", true)) "TLS record fragmentation" else "TCP writes, original TLS record"}\n\n$focusedReport\n\nSelected page error: ${loadErrors[browser] ?: "None recorded"}\n\nApp totals: ${p?.connections?.get() ?: 0} connections, ${p?.serverReplies?.get() ?: 0} server replies.\n\nBackground requests and video CDNs have separate host counters. Replies show received traffic, not verified page access.").setPositiveButton("Close", null).show(); return@setItems }
+                if (n == 5) { siteDiagnostics(focusedReport); return@setItems }
                 if (n >= 2) prefs.edit().putInt("dpiFragment", listOf(8, 32, 64)[n - 2]).apply()
                 updateDpi(true)
             }.setNegativeButton("Close", null).show()
+    }
+    private fun siteDiagnostics(focusedReport: String) {
+        val page = browser
+        page.evaluateJavascript("JSON.stringify(Array.from(document.querySelectorAll('iframe')).map(f=>f.src).filter(u=>u.startsWith('https://')))") { value ->
+            if (isFinishing || page !in pages.values) return@evaluateJavascript
+            val frameUrls = runCatching { JSONArray(JSONArray("[$value]").getString(0)) }.getOrElse { JSONArray() }
+            val frames = (0 until frameUrls.length()).map { frameUrls.getString(it) }.distinct()
+            val reports = frames.map { url ->
+                val host = android.net.Uri.parse(url).host.orEmpty()
+                "$url\n${dpiProxy?.describeHost(host) ?: "Proxy is off"}"
+            }.joinToString("\n\n")
+            val details = "Mode: ${if (prefs.getBoolean("dpiTlsRecords", true)) "TLS record fragmentation" else "TCP writes, original TLS record"}\n\n$focusedReport\n\nSelected page error: ${loadErrors[page] ?: "None recorded"}\n\n${AppStrings.t("Embedded content error")}: ${resourceErrors[page] ?: "None recorded"}\n\n$reports\n\nApp totals: ${dpiProxy?.connections?.get() ?: 0} connections, ${dpiProxy?.serverReplies?.get() ?: 0} server replies."
+            ArenaDialog.Builder(this).setTitle("Selected site diagnostics").setMessage(details).setPositiveButton("Close", null).show()
+        }
     }
     private fun routingModeDialog() {
         val values = listOf("auto", "off", "always")
@@ -793,42 +845,56 @@ class MainActivity : Activity() {
         box.addView(mute); box.addView(slider)
         ArenaDialog.Builder(this).setTitle("Sound").setView(box).setPositiveButton("Done", null).show()
     }
-    private fun settingsDialog() {
+    private fun settingsDialog(): android.app.Dialog {
         val dialog = android.app.Dialog(this)
-        val shell = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(16), dp(18), dp(12)); setBackgroundColor(bg) }
-        val head = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
-        head.addView(TextView(this).apply { text = "Settings"; textSize = 26f; setTextColor(this@MainActivity.text); typeface = Typeface.DEFAULT_BOLD }, LinearLayout.LayoutParams(0, dp(58), 1f))
-        head.addView(button("Close") { dialog.dismiss() }); shell.addView(head)
-        val tabs = LinearLayout(this)
-        shell.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(tabs) })
-        val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, dp(20), 0, dp(10)) }
-        shell.addView(ScrollView(this).apply { addView(content) }, LinearLayout.LayoutParams(-1, 0, 1f))
+        val shell = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; tag = "settings-shell"
+            background = android.graphics.drawable.GradientDrawable().apply { setColor(panel); cornerRadius = dp(14).toFloat(); setStroke(dp(1), Color.rgb(39,54,73)) }
+            clipToOutline = true
+        }
+        val head = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(20), dp(8), dp(14), dp(8)); setBackgroundColor(Color.rgb(24,34,47)) }
+        head.addView(TextView(this).apply { text = AppStrings.t("Settings").uppercase(); textSize = 24f; setTextColor(gold); typeface = brandTypeface }, LinearLayout.LayoutParams(0, dp(42), 1f))
+        head.addView(headerButton("×") { dialog.dismiss() }.apply { contentDescription = AppStrings.t("Close"); setBackgroundColor(Color.TRANSPARENT); textSize = 24f }); shell.addView(head)
+        val body = LinearLayout(this)
+        shell.addView(body, LinearLayout.LayoutParams(-1, 0, 1f))
+        val tabs = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(8), dp(12), dp(8), dp(8)); setBackgroundColor(bg); tag = "settings-sidebar" }
+        body.addView(ScrollView(this).apply { addView(tabs) }, LinearLayout.LayoutParams(dp(if (resources.configuration.screenWidthDp < 600) 112 else 176), -1))
+        val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(16), dp(20), dp(16)) }
+        val scroll = ScrollView(this).apply { addView(content); isFillViewport = true }
+        body.addView(scroll, LinearLayout.LayoutParams(0, -1, 1f))
         fun heading(label: String, description: String) {
-            content.addView(TextView(this).apply { text = label; textSize = 22f; setTextColor(gold); setPadding(0, 0, 0, dp(6)) })
-            content.addView(TextView(this).apply { text = description; textSize = 14f; setTextColor(Color.rgb(134,150,168)); setPadding(0, 0, 0, dp(22)) })
+            content.addView(TextView(this).apply { text = AppStrings.t(label).uppercase(); textSize = 17f; typeface = brandTypeface; setTextColor(gold); setPadding(0, 0, 0, dp(6)) })
+            if (description.isNotBlank()) content.addView(TextView(this).apply { text = description; textSize = 13f; setTextColor(Color.rgb(134,150,168)); setPadding(0, 0, 0, dp(14)) })
         }
         fun row(label: String, description: String, key: String? = null, default: Boolean = false, action: (() -> Unit)? = null) {
-            val row = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(14), dp(14), dp(10), dp(14)); background = controlBackground(false) }
+            val row = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(12), 0, dp(12)) }
             val labels = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 0, dp(10), 0) }
-            labels.addView(TextView(this).apply { text = label; textSize = 16f; setTextColor(this@MainActivity.text) })
-            labels.addView(TextView(this).apply { text = description; textSize = 13f; setPadding(0, dp(5), 0, 0); setTextColor(Color.rgb(134,150,168)) })
+            labels.addView(TextView(this).apply { text = label; textSize = 14f; typeface = Typeface.DEFAULT_BOLD; setTextColor(this@MainActivity.text) })
+            if (description.isNotBlank()) labels.addView(TextView(this).apply { text = description; textSize = 12f; setPadding(0, dp(4), 0, 0); setTextColor(Color.rgb(134,150,168)) })
             row.addView(labels, LinearLayout.LayoutParams(0, -2, 1f))
             if (key != null) row.addView(Switch(this).apply {
                 contentDescription = label; isChecked = prefs.getBoolean(key, default)
+                thumbTintList = android.content.res.ColorStateList.valueOf(gold)
                 setOnCheckedChangeListener { _, on ->
                     prefs.edit().putBoolean(key, on).apply()
                     if (key == "dpi") updateDpi(true)
                     if (key == "focusAudio") applyAudio()
-                    if (key == "autoskip") pages.values.forEach { it.reload() }
+                    if (key == "autoskip" || key == "adblock") pages.values.forEach { installContentScript(it); runAutoSkip(it) }
                 }
-            }) else row.addView(button("Open") { action?.invoke() })
-            content.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
+            }) else row.addView(headerButton(if (label == "Language") "Türkçe / English  ⌄" else label) { action?.invoke() }.apply { maxWidth = dp(if (resources.configuration.screenWidthDp < 600) 100 else 190) })
+            content.addView(row, LinearLayout.LayoutParams(-1, -2))
+            content.addView(View(this).apply { setBackgroundColor(Color.rgb(34,48,66)) }, LinearLayout.LayoutParams(-1, dp(1)))
         }
         fun section(n: Int) {
             content.removeAllViews()
+            scroll.scrollTo(0, 0)
+            for (i in 0 until tabs.childCount) (tabs.getChildAt(i) as Button).apply {
+                background = android.graphics.drawable.GradientDrawable().apply { setColor(if (i == n) Color.rgb(42,50,61) else Color.TRANSPARENT); cornerRadius = dp(8).toFloat() }
+                setTextColor(if (i == n) this@MainActivity.text else Color.rgb(134,150,168))
+            }
             when (n) {
                 0 -> {
-                    heading("App", "Football Arena")
+                    heading("App", "Football Arena · ${packageManager.getPackageInfo(packageName, 0).versionName}")
                     row("Language", "Türkçe / English", action = { dialog.dismiss(); languageDialog() })
                     row("Restore session", "Remember the last page and layout.", "restore", true)
                     row("Passcode", "Ask for a four-digit code when the app starts.", action = { changePass() })
@@ -857,11 +923,14 @@ class MainActivity : Activity() {
                 }
             }
         }
-        arrayOf("App", "Sound & Video", "Links", "Network").forEachIndexed { i, label -> tabs.addView(button(label) { section(i) }) }
+        arrayOf("App", "Sound & Video", "Links", "Network").forEachIndexed { i, label -> tabs.addView(button(label) { section(i) }.apply { gravity = Gravity.CENTER_VERTICAL; textSize = 13f; setPadding(dp(12), 0, dp(8), 0) }, LinearLayout.LayoutParams(-1, dp(44)).apply { bottomMargin = dp(4) }) }
         section(0); dialog.setContentView(shell); dialog.show()
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
-        dialog.window?.setLayout(if (leanback) dp(850) else -1, -1)
+        dialog.window?.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+        dialog.window?.setDimAmount(.65f)
+        dialog.window?.setLayout(minOf(dp(920), resources.displayMetrics.widthPixels - dp(28)), minOf(dp(650), resources.displayMetrics.heightPixels - dp(48)))
         AppStrings.watch(shell)
+        return dialog
     }
     private fun configureBrowser(view: WebView) {
         // Third-party players often use cookies and HTTP media within HTTPS pages.
@@ -871,6 +940,9 @@ class MainActivity : Activity() {
         view.settings.loadWithOverviewMode = true
         view.settings.allowFileAccess = false
         view.settings.allowContentAccess = false
+        view.settings.setSupportMultipleWindows(true)
+        view.settings.javaScriptCanOpenWindowsAutomatically = false
+        installContentScript(view)
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(view, true)
         if (android.os.Build.VERSION.SDK_INT >= 29) view.isForceDarkAllowed = false
@@ -878,6 +950,8 @@ class MainActivity : Activity() {
     private fun closePane() {
         val page = pages.remove(selectedKey) ?: return
         pendingNavigations.remove(page)
+        contentScripts.remove(page)?.remove()
+        resourceErrors.remove(page)
         desktopRedirects.remove(page)
         bypassPages.remove(page)
         errorLabels.remove(page); loadErrors.remove(page); historyButtons.remove(page)
@@ -901,7 +975,31 @@ class MainActivity : Activity() {
     }
     override fun onPause() { super.onPause(); pages.values.forEach { it.onPause() } }
     override fun onResume() { super.onResume(); pages.values.forEach { it.onResume() } }
-    private fun videoClient() = object : WebChromeClient() {
+    private fun videoClient(owner: WebView) = object : WebChromeClient() {
+        override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: android.os.Message): Boolean {
+            if (!isUserGesture) return false
+            // Capture target=_blank/window.open without replacing the playing pane.
+            val child = WebView(this@MainActivity)
+            var handled = false
+            fun accept(url: String) {
+                if (handled || !(url.startsWith("https://") || url.startsWith("http://"))) return
+                handled = true
+                if (!prefs.getBoolean("adblock", true) || !AdRules.blocks(url)) openUrl(url)
+                child.post { child.destroy() }
+            }
+            child.webViewClient = object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(v: WebView, r: WebResourceRequest): Boolean { accept(r.url.toString()); return true }
+                override fun onPageStarted(v: WebView, url: String, icon: android.graphics.Bitmap?) { accept(url) }
+            }
+            (resultMsg.obj as WebView.WebViewTransport).webView = child
+            resultMsg.sendToTarget()
+            child.postDelayed({ if (!handled) { handled = true; child.destroy() } }, 15000)
+            return true
+        }
+        override fun onConsoleMessage(message: ConsoleMessage): Boolean {
+            if (message.messageLevel() == ConsoleMessage.MessageLevel.ERROR) resourceErrors[owner] = "${message.sourceId()}:${message.lineNumber()}\n${message.message()}"
+            return false
+        }
         override fun onShowCustomView(view: View, callback: CustomViewCallback) {
             if (fullVideo != null) { callback.onCustomViewHidden(); return }
             fullVideo = view; fullCallback = callback

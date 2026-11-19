@@ -19,6 +19,8 @@ object AppStrings {
         language = context.getSharedPreferences("football-arena", 0).getString("language", "tr") ?: "tr"
         val json = JSONObject(context.assets.open("i18n-tr.json").bufferedReader().use { it.readText() })
         catalog = json.keys().asSequence().associateWith { json.getString(it) } + mapOf(
+            "Save site" to "Siteyi kaydet",
+            "Embedded content error" to "Gömülü içerik hatası",
             "Security warning" to "Güvenlik uyarısı",
             "Certificate validation failed ({0}). Connection cancelled." to "Sertifika doğrulanamadı ({0}). Bağlantı iptal edildi.",
             "Safe Browsing blocked this page. This is a security warning, not a DPI failure." to "Güvenli Tarama bu sayfayı engelledi. Bu bir güvenlik uyarısıdır, DPI bağlantı hatası değildir.",
