@@ -97,7 +97,7 @@ class LiveContentBlockingTest {
             if(preRoll) {
                 val skipped=awaitBoolean(page,"""(()=>{try{
                     const frame=document.querySelector($selector);const doc=frame.contentDocument;
-                    const ad=doc&&doc.querySelector('#preroll-container');const main=doc&&doc.querySelector('#player-container');
+                    const ad=doc&&doc.querySelector('#preroll-container');const main=doc&&doc.querySelector(${JSONObject.quote(if(id=="patronspor") "#player" else "#player-container")});
                     return !!ad&&!!main&&frame.contentWindow.getComputedStyle(ad).display==='none'
                         &&main.getBoundingClientRect().width>0&&main.getBoundingClientRect().height>0
                         &&Array.from(main.querySelectorAll('[data-poster],.poster-container')).every(e=>frame.contentWindow.getComputedStyle(e).backgroundImage==='none')
@@ -114,7 +114,7 @@ class LiveContentBlockingTest {
     }
     @Test(timeout=120000) fun netsporFirstPartyBannersAndCustomPreroll() = checkSite("netspor","#videoPlayer",".banner-container.fullwidth",true)
     @Test(timeout=120000) fun mahsunFirstPartyBannersAndCustomPreroll() = checkSite("mahsunsports","#customIframe",".banner-container",true)
-    @Test(timeout=120000) fun patronPromotionalBannersPreservePlayer() = checkSite("patronspor","iframe#player","#ustBannerLink,#altBannerLink,#footerBannerLink,.hellobar,.background-link")
+    @Test(timeout=120000) fun patronPromotionalBannersPreservePlayer() = checkSite("patronspor","iframe#player","#ustBannerLink,#altBannerLink,#footerBannerLink,.hellobar,.background-link",true)
     @Test(timeout=120000) fun ardaAdZonesPreservePlayer() = checkSite("ardaspor","#playerFrame","[id^='zone_'],a[href*='1xbet.com']")
     @Test(timeout=120000) fun trgoalsBannersPreservePlayer() = checkSite("trgoals","#customIframe",".ads-container,.ads_single_font,.match-flow-ad")
     @Test(timeout=120000) fun zeusBannersPreservePlayer() = checkSite("zeustv","#main-player-container","#ad-hellobar,#ad-top-banner,#ad-player-top,#ad-player-bottom,#ad-background,#page-skin-iframe")

@@ -104,10 +104,21 @@ class AutoSkipIntegrationTest {
             awaitJs(scenario,page,"getComputedStyle(document.body).backgroundImage!=='none'&&getComputedStyle(document.querySelector('.banner-container')).display!=='none'&&window.token===window.original")
         }
     }
+    @Test fun patronPointerDownSkipWaitsUntilReadyAndClearsOnlyTheAdPoster() {
+        prepare()
+        val html="""<html><body><div id="preroll-container"><div id="preroll-player"></div><button id="skip-button" disabled>Reklamı geç (1)</button></div>
+            <a id="watermark"></a><div id="player"><video id="match" poster="https://media.example/promo.jpg"></video><div data-poster style="background-image:url('https://media.example/promo.jpg')"><button id="mainPlay">Play match</button></div></div>
+            <script>document.getElementById('skip-button').addEventListener('mousedown',e=>{if(!e.target.disabled){window.started=true;document.getElementById('preroll-container').style.display='none';}});setTimeout(()=>{const b=document.getElementById('skip-button');b.disabled=false;b.textContent='Reklamı Geç ▶';},1000);</script></body></html>"""
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            lateinit var page:WebView
+            scenario.onActivity { a -> page=create(a){html};page.loadUrl("https://fixture.example/") }
+            awaitJs(scenario,page,"window.started===true&&window.__faContentStats.skipActions>0&&getComputedStyle(document.querySelector('[data-poster]')).backgroundImage==='none'&&!match.hasAttribute('poster')&&mainPlay.getBoundingClientRect().height>0")
+        }
+    }
     @Test fun sameOriginPlayerWorksWithoutDocumentStartInjection() {
         prepare()
         val root="""<html><body><script>addEventListener('message',e=>{if(e.data==='fallback-skipped')window.skipped=true;});</script><iframe src="/frame" width="500" height="300"></iframe></body></html>"""
-        val player="""<html><body><button onclick="parent.postMessage('fallback-skipped','*')">SKIP AD</button></body></html>"""
+        val player="""<html><body><button onclick="this.setAttribute('data-skipped','true');this.style.display='none'">SKIP AD</button></body></html>"""
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             lateinit var page:WebView
             scenario.onActivity { a ->
@@ -122,7 +133,7 @@ class AutoSkipIntegrationTest {
                 }
                 page.loadUrl("https://fixture.example/")
             }
-            awaitJs(scenario,page,"window.skipped===true&&window.__faContentStats.skipActions>0")
+            awaitJs(scenario,page,"document.querySelector('iframe').contentDocument.querySelector('button').getAttribute('data-skipped')==='true'&&window.__faContentStats.skipActions===1")
         }
     }
     @Test fun uppercaseLabelsIconButtonsAndCountdownsWorkWithoutMutingOrSeekingTheMatch() {

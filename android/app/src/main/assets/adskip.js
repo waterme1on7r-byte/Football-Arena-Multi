@@ -41,6 +41,7 @@
         if (child.__faAdDocument !== doc) {
           child.__faSiteId = window.__faSiteId;
           child.__faAdOff = window.__faAdOff; child.__faBlockAds = window.__faBlockAds;
+          child.__faActionBridge = action;
           boot(child);
         }
       } catch (_) { /* Cross-origin frames require WebView's document-start feature. */ }
@@ -48,7 +49,11 @@
   }
   const settings = () => ({ type: TYPE, skipOff: !!window.__faAdOff, blockAds: !!window.__faBlockAds });
   const send = (target, data) => { try { target.postMessage(data, "*"); } catch (_) {} };
-  const action = () => { stats.skipActions++; if (parent !== window) send(parent, { type: ACTION }); };
+  const action = () => {
+    stats.skipActions++;
+    if (typeof window.__faActionBridge === 'function') window.__faActionBridge();
+    else if (parent !== window) send(parent, { type: ACTION });
+  };
   const marked = new Set();
   const maskedPosters = new Set();
   const videoPosters = new Map();
@@ -120,17 +125,20 @@
       });
     }
     // Player documents have no parent page's banner layout; match the observed ad-only overlay.
-    if (document.querySelector('#preroll-container #preroll-video') && document.querySelector('#skip-ad-btn[onclick*="skipAd"]')) {
-      document.querySelectorAll('#splash-banner,#player-logo').forEach(hidePromotion);
+    const netsporPlayer = document.querySelector('#preroll-container #preroll-video') && document.querySelector('#skip-ad-btn[onclick*="skipAd"]');
+    const patronPlayer = document.querySelector('#preroll-player') && document.querySelector('#skip-button') && document.querySelector('#watermark');
+    if (netsporPlayer || patronPlayer) {
+      if (netsporPlayer) document.querySelectorAll('#splash-banner,#player-logo').forEach(hidePromotion);
       // This player's default main-player poster repeats the advertisement. Keep its play
       // button/controls and video element; remove only that promotional background/poster.
-      for (const poster of document.querySelectorAll('#player-container [data-poster],#player-container .poster-container')) {
+      const mainSelector = netsporPlayer ? '#player-container' : '#player';
+      for (const poster of document.querySelectorAll(mainSelector+' [data-poster],'+mainSelector+' .poster-container')) {
         if (!poster.hasAttribute('data-fa-ad-poster')) {
           poster.setAttribute('data-fa-ad-poster','true'); maskedPosters.add(poster);
           if (!adSeen.has(poster)) { adSeen.add(poster); stats.hiddenPromotions++; }
         }
       }
-      for (const video of document.querySelectorAll('#player-container video[poster]')) {
+      for (const video of document.querySelectorAll(mainSelector+' video[poster]')) {
         videoPosters.set(video,video.getAttribute('poster')); video.removeAttribute('poster');
       }
     }
@@ -196,7 +204,14 @@
       if (labels.some(t => /\b[1-9][0-9]*\s*(?:s|sn|sec|seconds?|saniye)?\b/.test(t))) continue;
       if (now - (clicked.get(target) || 0) < 3000) continue;
       clicked.set(target, now);
-      try { action(); target.click(); } catch (_) {}
+      try {
+        action();
+        // Patron wires its verified skip control to pointer-down, with no click handler.
+        if (target.id === 'skip-button' && target.closest('#preroll-container') && document.querySelector('#preroll-player')) {
+          target.dispatchEvent(new window.MouseEvent('mousedown', {bubbles:true,cancelable:true,view:window}));
+        }
+        target.click();
+      } catch (_) {}
     }
     for (const video of document.querySelectorAll("video")) {
       if (!visible(video, false)) continue;

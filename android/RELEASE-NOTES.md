@@ -1,4 +1,7 @@
-Android 1.8.34 preview
+Android 1.8.35 preview
+
+- Support Patron's press-event skip control after its countdown and remove its sponsored player poster while retaining playback controls.
+- Report same-origin fallback skip actions directly to the owning page.
 
 - Remove the promotional main-player poster left behind after Netspor/Mahsun pre-roll skipping, while retaining the play control.
 - Apply same-origin player rules on older WebViews without document-start support, and inject fallback rules as pages become visible.
