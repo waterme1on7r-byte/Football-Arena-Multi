@@ -37,6 +37,11 @@ class LiveContentBlockingTest {
         val paintToken=java.util.UUID.randomUUID().toString()
         evaluate(page,"requestAnimationFrame(()=>requestAnimationFrame(()=>window.__faPaintReady=${JSONObject.quote(paintToken)}));true")
         awaitBoolean(page,"window.__faPaintReady===${JSONObject.quote(paintToken)}",3000)
+        val visual=CountDownLatch(1)
+        instrumentation.runOnMainSync {
+            page.postVisualStateCallback(1,object:WebView.VisualStateCallback(){override fun onComplete(requestId:Long){page.invalidate();visual.countDown()}})
+        }
+        assertTrue("WebView did not commit the checked DOM to its visual state",visual.await(5,TimeUnit.SECONDS))
         Thread.sleep(400) // Allow the renderer frame to reach Android's compositor; never wait for UI idle.
         for(command in listOf("mkdir -p /data/local/tmp/football-arena-ui", "screencap -p /data/local/tmp/football-arena-ui/$name.png")) {
             android.os.ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand(command)).use { it.readBytes() }
@@ -46,8 +51,8 @@ class LiveContentBlockingTest {
             banners:Array.from(document.querySelectorAll('a img')).slice(0,25).map(e=>({alt:e.alt,height:e.getBoundingClientRect().height,marked:!!e.closest('[data-fa-ad-hidden]')})),
             frames:Array.from(document.querySelectorAll('iframe')).slice(0,8).map(e=>({id:e.id,src:e.getAttribute('src'),height:e.getBoundingClientRect().height}))})""")
         val summary=runCatching { JSONArray("[$raw]").getString(0) }.getOrDefault(raw)
-        val quoted="'"+summary.replace("'","'\\''")+"'"
-        android.os.ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand("printf %s $quoted > /data/local/tmp/football-arena-ui/$name.json")).use { it.readBytes() }
+        val reports=java.io.File(instrumentation.targetContext.getExternalFilesDir(null),"live-reports").apply { mkdirs() }
+        java.io.File(reports,"$name.json").writeText(summary)
     }
     private fun checkSite(id:String,playerSelector:String,adSelector:String,preRoll:Boolean=false) {
         instrumentation.targetContext.getSharedPreferences("football-arena",0).edit().clear()

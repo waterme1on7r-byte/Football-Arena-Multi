@@ -118,6 +118,7 @@ class AutoSkipIntegrationTest {
                 page.webViewClient=object:WebViewClient() {
                     override fun shouldInterceptRequest(view:WebView,request:WebResourceRequest)=WebResourceResponse("text/html","UTF-8",(if(request.url.path=="/frame")player else root).byteInputStream())
                     override fun onPageCommitVisible(view:WebView,url:String)=nativeClient.onPageCommitVisible(view,url)
+                    override fun onPageFinished(view:WebView,url:String)=nativeClient.onPageFinished(view,url)
                 }
                 page.loadUrl("https://fixture.example/")
             }
