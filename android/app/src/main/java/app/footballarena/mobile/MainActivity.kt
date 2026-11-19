@@ -453,12 +453,12 @@ class MainActivity : Activity() {
         background = controlBackground(primary)
         if (icon != null) {
             contentDescription = mapOf("back" to "Back", "forward" to "Forward", "close" to "Close", "refresh" to "Refresh", "main" to "Main pane", "sound" to "Sound", "power" to "Turn off")[icon]
-            foreground = ControlIcon(icon, if (primary) bg else this@MainActivity.text, dp(20))
-            foregroundGravity = Gravity.CENTER
+            setCompoundDrawablesWithIntrinsicBounds(ControlIcon(icon, if (primary) bg else this@MainActivity.text, dp(20)), null, null, null)
         }
         minHeight = 0; minimumHeight = 0; minWidth = 0; minimumWidth = 0
-        isFocusable = true; setOnClickListener { action(it) }; setPadding(dp(10), 0, dp(10), 0)
         val size = if (leanback) 48 else 40
+        val inset = if (icon != null) dp((size - 20) / 2) else dp(10)
+        isFocusable = true; setOnClickListener { action(it) }; setPadding(inset, 0, inset, 0)
         val lp = LinearLayout.LayoutParams(if (icon != null) dp(size) else -2, dp(if (leanback) 48 else 42)); lp.marginStart = dp(3); lp.marginEnd = dp(3); layoutParams = lp
         }
     }

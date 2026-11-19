@@ -30,12 +30,14 @@ class NativeLayoutTest {
             scenario.onActivity { activity ->
                 @Suppress("UNCHECKED_CAST")
                 val pages = MainActivity::class.java.getDeclaredField("pages").apply { isAccessible = true }.get(activity) as MutableMap<String, WebView>
-                for (i in 1..4) pages["test-$i"] = WebView(activity)
+                for (i in 1..4) pages["test-$i"] = WebView(activity).apply { setBackgroundColor(android.graphics.Color.rgb(11, 15, 20)) }
                 MainActivity::class.java.getDeclaredField("selectedKey").apply { isAccessible = true }.set(activity, "test-1")
                 MainActivity::class.java.getDeclaredMethod("renderPages").apply { isAccessible = true }.invoke(activity)
                 AppStrings.apply(activity.window.decorView)
             }
             instrumentation.waitForIdleSync()
+            Thread.sleep(400)
+            val image = instrumentation.uiAutomation.takeScreenshot()
             scenario.onActivity { activity ->
                 val controls = children(activity.window.decorView).filterIsInstance<Button>().filter { it.contentDescription?.toString() in listOf("Toggle main pane", "Ana bölmeyi değiştir") }
                 assertEquals(4, controls.size)
@@ -43,16 +45,15 @@ class NativeLayoutTest {
                 controls.forEach { button ->
                     assertTrue("Pane icons must stay compact", button.width <= 48 * density)
                     assertTrue("Every pane control must be on screen", button.getGlobalVisibleRect(android.graphics.Rect()))
-                    val image = android.graphics.Bitmap.createBitmap(button.width, button.height, android.graphics.Bitmap.Config.ARGB_8888)
-                    button.draw(android.graphics.Canvas(image))
+                    val position = IntArray(2); button.getLocationOnScreen(position)
                     var ink = 0
                     for (x in button.width / 4 until button.width * 3 / 4) for (y in button.height / 4 until button.height * 3 / 4) {
-                        if (image.getPixel(x, y) == android.graphics.Color.rgb(11, 15, 20)) ink++
+                        if (image.getPixel(position[0] + x, position[1] + y) == android.graphics.Color.rgb(11, 15, 20)) ink++
                     }
-                    image.recycle()
                     assertTrue("Main-pane icon must be visible on its gold button", ink > 5)
                 }
             }
+            image.recycle()
             screenshot("tablet-four-panes")
             var dialog: ArenaDialog? = null
             scenario.onActivity { activity -> dialog = ArenaDialog.Builder(activity).setTitle("Choose language").setItems(arrayOf("Türkçe", "English")) { _, _ -> }.show() }
