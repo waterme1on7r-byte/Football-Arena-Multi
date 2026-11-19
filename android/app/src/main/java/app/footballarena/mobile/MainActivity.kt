@@ -1,7 +1,6 @@
 package app.footballarena.mobile
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Bundle
@@ -39,7 +38,10 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private var selected = ""
     private var selectedKey = ""
-    private var layoutCount = 1
+    private var layoutCount = 0
+    private val layoutButtons = mutableListOf<Button>()
+    private val addresses = mutableMapOf<WebView, EditText>()
+    private val historyButtons = mutableMapOf<WebView, Pair<Button, Button>>()
     private var mainPane = ""
     private var dpiProxy: DpiProxy? = null
     private var dpiState = "Off"
@@ -49,6 +51,11 @@ class MainActivity : Activity() {
     private lateinit var dpiButton: Button
     private val pages = linkedMapOf<String, WebView>()
     private val pageSites = mutableMapOf<String, Site>()
+    private val automaticRoutes = AutoRouting()
+    private val viewSites = java.util.concurrent.ConcurrentHashMap<WebView, String>()
+    private val safetyWarnings = mutableSetOf<WebView>()
+    private var routingGeneration = 0
+    private fun routingMode() = prefs.getString("dpiMode", "auto") ?: "auto"
     private var leanback = false
     private val bg = Color.rgb(11, 15, 20)
     private val panel = Color.rgb(18, 25, 35)
@@ -58,19 +65,35 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppStrings.init(this)
         leanback = packageManager.hasSystemFeature("android.software.leanback")
         window.statusBarColor = bg
         window.navigationBarColor = bg
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-        layoutCount = prefs.getInt("layout", 1).coerceIn(0, 4)
+        layoutCount = prefs.getInt("layout", 0).coerceIn(0, 4)
         loadSites()
         buildUi()
-        if (prefs.contains("passHash")) unlock() else startSession()
+        if (!prefs.getBoolean("languageChosen", false)) languageDialog(true)
+        else if (prefs.contains("passHash")) unlock() else startSession()
+    }
+    private fun languageDialog(firstLaunch: Boolean = false) {
+        val values = listOf("tr", "en")
+        ArenaDialog.Builder(this).setTitle("Choose language").setCancelable(!firstLaunch)
+            .setSingleChoiceItems(arrayOf("Türkçe", "English"), values.indexOf(AppStrings.language)) { dialog, index ->
+                AppStrings.language = values[index]
+                prefs.edit().putString("language", values[index]).putBoolean("languageChosen", true).apply()
+                AppStrings.apply(root); dialog.dismiss()
+                if (firstLaunch) { if (prefs.contains("passHash")) unlock() else startSession() }
+            }.show()
     }
     private fun startSession() {
         updateDpi(false)
         val previous = prefs.getString("last", "") ?: ""
-        if (prefs.getBoolean("restore", true) && previous.startsWith("https://")) openUrl(previous)
+        if (prefs.getBoolean("restore", true)) {
+            val previousSite = sites.firstOrNull { it.id == prefs.getString("lastSiteId", "") }
+            if (previousSite != null) openSite(previousSite)
+            else if (previous.startsWith("https://")) openUrl(previous)
+        }
         refreshLinks(false)
     }
     private fun digestPass(code: String, salt: String): String {
@@ -83,7 +106,7 @@ class MainActivity : Activity() {
     }
     private fun unlock() {
         val input = EditText(this).apply { inputType = 18; hint = "4-digit passcode" }
-        val dialog = AlertDialog.Builder(this).setTitle("Football Arena").setMessage("Enter your passcode").setView(input).setCancelable(false).setPositiveButton("Unlock", null).create()
+        val dialog = ArenaDialog.Builder(this).setTitle("Football Arena").setMessage("Enter your passcode").setView(input).setCancelable(false).setPositiveButton("Unlock", null).create()
         var tries = 0
         dialog.setOnShowListener { dialog.getButton(-1).setOnClickListener {
             if (verifyPass(input.text.toString())) { dialog.dismiss(); startSession() }
@@ -96,7 +119,7 @@ class MainActivity : Activity() {
         val next = EditText(this).apply { hint = "New 4-digit code (blank removes it)"; inputType = 18 }
         if (prefs.contains("passHash")) box.addView(current)
         box.addView(next)
-        val d = AlertDialog.Builder(this).setTitle("Passcode").setView(box).setNegativeButton("Cancel", null).setPositiveButton("Save", null).create()
+        val d = ArenaDialog.Builder(this).setTitle("Passcode").setView(box).setNegativeButton("Cancel", null).setPositiveButton("Save", null).create()
         d.setOnShowListener { d.getButton(-1).setOnClickListener {
             if (prefs.contains("passHash") && !verifyPass(current.text.toString())) { current.error = "Incorrect code"; return@setOnClickListener }
             val code = next.text.toString()
@@ -128,6 +151,7 @@ class MainActivity : Activity() {
     }
 
     private fun saveSites() {
+        sites.forEach { automaticRoutes.registerSite(it.id, it.url) }
         val a = JSONArray()
         sites.forEach { a.put(JSONObject().put("id", it.id).put("name", it.name).put("url", it.url).put("quick", it.quick).put("custom", it.custom)) }
         prefs.edit().putString("sites", a.toString()).apply()
@@ -150,9 +174,14 @@ class MainActivity : Activity() {
         title = TextView(this).apply { text = if (wide) "FOOTBALL ARENA" else "FOOTBALL\nARENA"; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(8), 0, 0, 0); setTextColor(gold); textSize = if (wide) 30f else 18f; typeface = Typeface.create("sans-serif-condensed", Typeface.BOLD) }
         brand.addView(title); toolbar.addView(brand)
         val tools = LinearLayout(this).apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL }
-        dpiButton = button("DPI · Off") { dpiMenu() }
+        dpiButton = button("● DPI") { dpiQuickMenu(it) }
         tools.addView(dpiButton)
-        tools.addView(button("Layout ▾") { AlertDialog.Builder(this).setTitle("Layout").setSingleChoiceItems(arrayOf("Auto", "1 pane", "2 panes", "3 panes", "4 panes"), layoutCount) { d, n -> setLayout(n); d.dismiss() }.show() })
+        val segment = LinearLayout(this).apply { background = controlBackground(false); clipToOutline = true }
+        listOf("Auto", "1", "2", "3", "4").forEachIndexed { n, label ->
+            val b = button(label, n == layoutCount) { setLayout(n) }.apply { layoutParams = LinearLayout.LayoutParams(dp(if (n == 0) 70 else 42), dp(42)); minWidth = 0; setPadding(dp(6), 0, dp(6), 0) }
+            layoutButtons.add(b); segment.addView(b)
+        }
+        tools.addView(segment)
         tools.addView(button("Close all") { pages.keys.toList().forEach { selectedKey = it; closePane() } })
         tools.addView(button("⚙ Settings") { settingsDialog() })
         tools.addView(button("Add site", true) { addSite() })
@@ -165,7 +194,7 @@ class MainActivity : Activity() {
         scroll.addView(listBar)
         siteRow.addView(scroll, LinearLayout.LayoutParams(0, dp(if (leanback) 60 else 50), 1f))
         siteRow.addView(View(this).apply { setBackgroundColor(Color.rgb(34,48,66)) }, LinearLayout.LayoutParams(dp(1), dp(26)).apply { marginStart = dp(12); marginEnd = dp(12) })
-        siteRow.addView(button("ϟ Quick access", true) { quickAccess() })
+        siteRow.addView(button("ϟ Quick access", true) { quickAccess(it) })
         root.addView(siteRow)
         browser = WebView(this).apply {
             setBackgroundColor(Color.BLACK)
@@ -184,14 +213,19 @@ class MainActivity : Activity() {
 
     private fun makePageClient(): WebViewClient = object : WebViewClient() {
                 override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+                    addresses[view]?.let { if (!it.hasFocus()) it.setText(url) }
                     loadErrors.remove(view); errorLabels[view]?.visibility = View.GONE
+                    safetyWarnings.remove(view)
+                    android.net.Uri.parse(url).host?.let { host -> viewSites[view]?.let { automaticRoutes.registerHost(it, host) } }
                     if (view === browser) status.text = "Loading…"
                 }
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     val u = request.url.toString()
+                    request.url.host?.let { host -> viewSites[view]?.let { automaticRoutes.registerHost(it, host) } }
                     return !(u.startsWith("https://") || u.startsWith("http://"))
                 }
                 override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+                    request.url.host?.let { host -> viewSites[view]?.let { automaticRoutes.registerHost(it, host) } }
                     if (!prefs.getBoolean("adblock", true)) return null
                     val host = request.url.host?.lowercase() ?: return null
                     if (adHosts.any { host == it || host.endsWith(".$it") }) return WebResourceResponse("text/plain", "utf-8", 204, "No Content", emptyMap(), "".byteInputStream())
@@ -199,15 +233,31 @@ class MainActivity : Activity() {
                 }
                 override fun onPageFinished(view: WebView, url: String) {
                     super.onPageFinished(view, url)
+                    historyButtons[view]?.let { it.first.isEnabled = view.canGoBack(); it.second.isEnabled = view.canGoForward() }
+                    addresses[view]?.let { if (!it.hasFocus()) it.setText(url) }
                     if (view === browser) {
                         selected = url
-                        prefs.edit().putString("last", url).apply()
+                        prefs.edit().putString("last", url).putString("lastSiteId", viewSites[view] ?: "").apply()
                         status.text = if (loadErrors.containsKey(view)) "Page failed · see pane" else "Ready"
                     }
                     runAutoSkip(view)
                 }
                 override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+                    val connectionFailure = error.errorCode in setOf(ERROR_HOST_LOOKUP, ERROR_CONNECT, ERROR_IO, ERROR_TIMEOUT) || error.description.toString() in setOf("net::ERR_CONNECTION_RESET", "net::ERR_EMPTY_RESPONSE", "net::ERR_CONNECTION_CLOSED")
+                    if (request.isForMainFrame && request.method == "GET" && request.url.scheme == "https" && connectionFailure && view !in safetyWarnings && routingMode() == "auto" && dpiProxy != null) {
+                        val host = request.url.host
+                        if (host != null && automaticRoutes.retryWithBypass(host)) {
+                            status.text = "Retrying with bypass…"
+                            view.post { if (!isFinishing && viewSites.containsKey(view) && view !in safetyWarnings) view.loadUrl(request.url.toString()) }
+                            return
+                        }
+                    }
                     if (request.isForMainFrame) pageFailed(view, request.url.toString(), "WebView ${error.errorCode}: ${error.description}")
+                }
+                override fun onSafeBrowsingHit(view: WebView, request: WebResourceRequest, threatType: Int, callback: SafeBrowsingResponse) {
+                    safetyWarnings.add(view)
+                    loadErrors[view] = "Safe Browsing warning for ${request.url} (type $threatType). No bypass retry."
+                    callback.showInterstitial(true)
                 }
                 override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
                     if (request.isForMainFrame) pageFailed(view, request.url.toString(), "HTTP ${response.statusCode}: ${response.reasonPhrase}")
@@ -231,10 +281,12 @@ class MainActivity : Activity() {
         val footer = FrameLayout(this).apply { setPadding(dp(14), dp(4), dp(14), dp(4)); setBackgroundColor(bg) }
         status = TextView(this).apply { setTextColor(Color.LTGRAY); textSize = 12f; text = "Ready" }
         status.gravity = Gravity.CENTER_VERTICAL; status.maxWidth = dp(180)
-        footer.addView(status, FrameLayout.LayoutParams(-2, dp(32), Gravity.START or Gravity.CENTER_VERTICAL))
+        footer.addView(button("Update links") { refreshLinks(true) }, FrameLayout.LayoutParams(-2, dp(38), Gravity.START or Gravity.CENTER_VERTICAL))
+        footer.addView(status, FrameLayout.LayoutParams(-2, dp(32), Gravity.END or Gravity.CENTER_VERTICAL))
         footer.addView(TextView(this).apply { text = "WTMLJR"; setTextColor(gold); textSize = 12f; letterSpacing = .25f; gravity = Gravity.CENTER }, FrameLayout.LayoutParams(-2, dp(32), Gravity.CENTER))
         root.addView(footer)
         setContentView(root)
+        AppStrings.watch(root)
         renderSiteBar()
     }
 
@@ -244,32 +296,32 @@ class MainActivity : Activity() {
         sites.filter { !it.quick }.forEach { s ->
             val isOpen = pages.containsKey(s.id)
             val b = button((if (isOpen) "●  " else "") + s.name) { openSite(s) }
+            b.tag = "user-content"
             b.setTextColor(if (isOpen) gold else text)
             b.background = tabBackground(isOpen, s.id == selectedKey)
             b.contentDescription = "${s.name}, ${if (isOpen) "open" else "closed"}${if (s.id == selectedKey) ", focused" else ""}"
             b.isSelected = isOpen
-            b.setOnLongClickListener { editSite(s); true }
+            b.setOnLongClickListener { editSite(s, b); true }
             listBar.addView(b)
         }
     }
-    private fun quickAccess() {
+    private fun quickAccess(anchor: View? = null) {
         val quick = sites.filter { it.quick }
-        AlertDialog.Builder(this).setTitle("Quick access").setItems(quick.map { it.name }.toTypedArray()) { _, n -> openSite(quick[n]) }.setNegativeButton("Close", null).show()
+        themedMenu(anchor, "Quick access", quick.map { it.name }) { n -> openSite(quick[n]) }
     }
 
     private fun openSite(site: Site) {
+        automaticRoutes.registerSite(site.id, site.url)
         selectedKey = site.id
         val existing = pages[site.id]
         if (existing != null) {
-            browser = existing; selected = site.id
-            renderSiteBar()
-            if (existing.parent == null) renderPages() else { existing.requestFocus(); applyAudio() }
-            status.text = site.name
+            closePane()
             return
         }
         if (!pages.containsKey(site.id)) {
             val page = if (pages.isEmpty() && browser.url == null) browser else createPage()
             pages[site.id] = page; pageSites[site.id] = site
+            viewSites[page] = site.id
             if (page.url.isNullOrBlank()) page.loadUrl(site.url)
         }
         browser = pages[site.id]!!
@@ -310,8 +362,29 @@ class MainActivity : Activity() {
             }
             val pane = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; background = controlBackground(false); clipToOutline = true; setPadding(dp(1), dp(1), dp(1), dp(1)) }
             val controls = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(4), dp(4), dp(4), dp(4)) }
-            controls.addView(button(pageSites[key]?.name ?: "Page", key == selectedKey) { selectedKey = key; browser = page; renderSiteBar(); applyAudio() })
+            controls.addView(TextView(this).apply {
+                tag = "user-content"; text = pageSites[key]?.name ?: "Page"; setTextColor(gold); typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(12), 0, dp(12), 0); maxWidth = dp(160); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+                isFocusable = true; setOnClickListener { selectedKey = key; browser = page; renderSiteBar(); applyAudio() }
+            }, LinearLayout.LayoutParams(-2, dp(42)))
             controls.addView(button("▣", mainPane == key) { mainPane = if (mainPane == key) "" else key; renderPages() }.apply { contentDescription = "Toggle main pane" })
+            val back = button("‹") { if (page.canGoBack()) page.goBack() }.apply { contentDescription = "Back"; isEnabled = page.canGoBack() }
+            val forward = button("›") { if (page.canGoForward()) page.goForward() }.apply { contentDescription = "Forward"; isEnabled = page.canGoForward() }
+            historyButtons[page] = back to forward
+            controls.addView(back); controls.addView(forward)
+            val address = EditText(this).apply {
+                setSingleLine(true); setText(page.url ?: pageSites[key]?.url ?: ""); textSize = 13f; setTextColor(this@MainActivity.text)
+                contentDescription = "Address bar"; inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
+                imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_GO
+                setOnEditorActionListener { _, _, _ ->
+                    var url = text.toString().trim(); if (!url.startsWith("http://") && !url.startsWith("https://")) url = "https://$url"
+                    val uri = android.net.Uri.parse(url)
+                    if (uri.host != null && uri.scheme in listOf("https", "http")) { automaticRoutes.registerHost(viewSites[page] ?: key, uri.host!!); page.loadUrl(url); clearFocus() }
+                    true
+                }
+            }
+            addresses[page] = address
+            controls.addView(address, LinearLayout.LayoutParams(dp(230), dp(42)))
             controls.addView(button("♫") { selectedKey = key; browser = page; volumeDialog(key) })
             controls.addView(button("↻") { page.reload() })
             controls.addView(button("×") { selectedKey = key; closePane() })
@@ -337,19 +410,28 @@ class MainActivity : Activity() {
         applyAudio()
     }
 
-    private fun setLayout(n: Int) { mainPane = ""; layoutCount = n; prefs.edit().putInt("layout", n).apply(); renderPages() }
+    private fun setLayout(n: Int) { mainPane = ""; layoutCount = n; prefs.edit().putInt("layout", n).apply(); layoutButtons.forEachIndexed { i, b -> b.background = controlBackground(i == n); b.setTextColor(if (i == n) bg else text) }; renderPages() }
     private fun openUrl(url: String) {
         if (!(url.startsWith("https://") || url.startsWith("http://"))) return
         selected = url
         if (selectedKey.isBlank() || selectedKey !in pages) selectedKey = "custom-${System.currentTimeMillis()}"
         if (!pages.containsKey(selectedKey)) { val page = if (pages.isEmpty()) browser else createPage(); pages[selectedKey] = page }
+        val site = sites.firstOrNull { it.url == url }
+        val stableId = site?.id ?: selectedKey
+        automaticRoutes.registerSite(stableId, url)
         browser = pages[selectedKey]!!
+        viewSites[browser] = stableId
         status.text = "Loading…"; renderSiteBar(); renderPages(); browser.loadUrl(url)
     }
 
     private fun button(label: String, primary: Boolean = false, action: (View) -> Unit): Button = Button(this).apply {
-        text = label; isAllCaps = false; textSize = if (leanback) 17f else 14f; setTextColor(if (primary) bg else this@MainActivity.text)
+        val icon = mapOf("‹" to "back", "›" to "forward", "×" to "close", "↻" to "refresh", "▣" to "main", "♫" to "sound", "⏻" to "power")[label]
+        text = if (icon == null) label else ""; isAllCaps = false; textSize = if (leanback) 17f else 14f; setTextColor(if (primary) bg else this@MainActivity.text)
         background = controlBackground(primary)
+        if (icon != null) {
+            contentDescription = mapOf("back" to "Back", "forward" to "Forward", "close" to "Close", "refresh" to "Refresh", "main" to "Main pane", "sound" to "Sound", "power" to "Turn off")[icon]
+            setCompoundDrawablesWithIntrinsicBounds(ControlIcon(icon, if (primary) bg else this@MainActivity.text, dp(22)), null, null, null)
+        }
         minHeight = dp(if (leanback) 50 else 42); minimumHeight = minHeight; minWidth = dp(if (leanback) 72 else 48)
         isFocusable = true; setOnClickListener { action(it) }; setPadding(dp(10), 0, dp(10), 0)
         val lp = LinearLayout.LayoutParams(-2, dp(if (leanback) 50 else 42)); lp.marginStart = dp(4); lp.marginEnd = dp(4); layoutParams = lp
@@ -394,19 +476,37 @@ class MainActivity : Activity() {
         popup.menu.add("Mute / unmute selected pane").setOnMenuItemClickListener { prefs.edit().putBoolean("mute-$selectedKey", !prefs.getBoolean("mute-$selectedKey", false)).apply(); applyAudio(); true }
         popup.menu.add("Only focused pane plays sound").apply { isCheckable = true; isChecked = prefs.getBoolean("focusAudio", false); setOnMenuItemClickListener { prefs.edit().putBoolean("focusAudio", !isChecked).apply(); applyAudio(); true } }
         popup.menu.add("Close selected pane").setOnMenuItemClickListener { closePane(); true }
-        popup.menu.add("About Football Arena").setOnMenuItemClickListener { AlertDialog.Builder(this).setTitle("Football Arena").setMessage("Android and Android TV preview · ${if (leanback) "TV" else "Mobile"} mode\nChat is not included.").setPositiveButton("OK", null).show(); true }
+        popup.menu.add("About Football Arena").setOnMenuItemClickListener { ArenaDialog.Builder(this).setTitle("Football Arena").setMessage("Android and Android TV preview · ${if (leanback) "TV" else "Mobile"} mode\nChat is not included.").setPositiveButton("OK", null).show(); true }
         popup.show()
     }
 
     private fun addSite() = siteDialog(null)
-    private fun editSite(s: Site) = AlertDialog.Builder(this).setTitle(s.name).setItems(arrayOf("Open", "Edit", "Delete", if (s.quick) "Remove from quick access" else "Add to quick access")) { _, which -> when (which) { 0 -> openSite(s); 1 -> siteDialog(s); 2 -> AlertDialog.Builder(this).setMessage("Delete ${s.name}?").setNegativeButton("Cancel", null).setPositiveButton("Delete") { _, _ -> sites.remove(s); prefs.edit().putStringSet("deleted", (prefs.getStringSet("deleted", emptySet())!! + s.id).toSet()).apply(); saveSites() }.show(); 3 -> { val i = sites.indexOf(s); sites[i] = s.copy(quick = !s.quick, custom = true); saveSites() } } }.show()
+    private fun themedMenu(anchor: View?, title: String, entries: List<String>, choose: (Int) -> Unit) {
+        if (anchor == null) { ArenaDialog.Builder(this).setTitle(title).setItems(entries.toTypedArray()) { _, n -> choose(n) }.setNegativeButton("Close", null).show(); return }
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(8), dp(8), dp(8), dp(8)); background = controlBackground(false) }
+        val popup = PopupWindow(ScrollView(this).apply { addView(box) }, dp(300), -2, true).apply { elevation = dp(12).toFloat(); setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)); isOutsideTouchable = true }
+        if (entries.isEmpty()) box.addView(TextView(this).apply { text = AppStrings.t("Nothing here yet. Open a site’s ⋮ menu and choose Add to quick access."); setTextColor(this@MainActivity.text); setPadding(dp(12), dp(12), dp(12), dp(12)) })
+        entries.forEachIndexed { n, label -> box.addView(button(label) { popup.dismiss(); choose(n) }.apply { if (title == "Quick access") tag = "user-content" }, LinearLayout.LayoutParams(-1, dp(48))) }
+        AppStrings.watch(box); popup.showAsDropDown(anchor, 0, dp(6))
+    }
+    private fun editSite(s: Site, anchor: View? = null) {
+        themedMenu(anchor, s.name, listOf("Open", "Edit", "Delete", if (s.quick) "Remove from quick access" else "Add to quick access")) { which ->
+            when(which) {
+                0 -> openSite(s)
+                1 -> siteDialog(s)
+                2 -> ArenaDialog.Builder(this).setMessage("Delete ${s.name}?").setNegativeButton("Cancel", null).setPositiveButton("Delete") { _, _ -> sites.remove(s); prefs.edit().putStringSet("deleted", (prefs.getStringSet("deleted", emptySet())!! + s.id).toSet()).apply(); if (pages.containsKey(s.id)) { selectedKey = s.id; closePane() }; saveSites() }.show()
+                3 -> { val i = sites.indexOf(s); if (i >= 0) sites[i] = s.copy(quick = !s.quick, custom = true); saveSites() }
+            }
+        }
+    }
+
 
     private fun siteDialog(old: Site?) {
         val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(22), dp(8), dp(22), 0) }
         val name = EditText(this).apply { hint = "Site name"; setText(old?.name ?: ""); setSingleLine(true) }
         val url = EditText(this).apply { hint = "https://example.com"; setText(old?.url ?: "https://"); setSingleLine(true); inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI }
         box.addView(name); box.addView(url)
-        AlertDialog.Builder(this).setTitle(if (old == null) "Add site" else "Edit site").setView(box).setNegativeButton("Cancel", null).setPositiveButton("Save") { _, _ ->
+        ArenaDialog.Builder(this).setTitle(if (old == null) "Add site" else "Edit site").setView(box).setNegativeButton("Cancel", null).setPositiveButton("Save") { _, _ ->
             val n = name.text.toString().trim(); var u = url.text.toString().trim(); if (!u.startsWith("http://") && !u.startsWith("https://")) u = "https://$u"
             if (n.isBlank() || !(u.startsWith("https://") || u.startsWith("http://"))) { toast("Enter a name and a valid web address"); return@setPositiveButton }
             if (old == null) sites.add(Site("custom-${System.currentTimeMillis()}", n.take(40), u, custom = true))
@@ -428,9 +528,9 @@ class MainActivity : Activity() {
                     val custom = sites.filter { it.custom }
                     val deleted = prefs.getStringSet("deleted", emptySet())!!
                     sites.clear(); sites.addAll(remote.filter { it.id !in deleted && custom.none { c -> c.id == it.id } }); custom.forEach { u -> if (sites.none { it.url == u.url }) sites.add(u) }
-                    saveSites(); status.text = if (manual) "Site list updated" else "Ready"
+                    saveSites(); status.text = if (manual) "Site list updated" else "Ready"; if (manual) ArenaDialog.Builder(this).setTitle("Link updates").setMessage("Site list updated").setPositiveButton("OK", null).show()
                 }
-            } catch (_: Exception) { runOnUiThread { if (manual) status.text = "Could not update site list · using saved sites" } }
+            } catch (_: Exception) { runOnUiThread { if (manual) { status.text = "Could not update site list · using saved sites"; ArenaDialog.Builder(this).setTitle("Link updates").setMessage("Could not update site list · using saved sites").setPositiveButton("OK", null).show() } } }
         }
     }
 
@@ -447,7 +547,7 @@ class MainActivity : Activity() {
     private fun sharePage() {
         val url = browser.url ?: return
         val i = android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain").putExtra(android.content.Intent.EXTRA_TEXT, url)
-        startActivity(android.content.Intent.createChooser(i, "Share page"))
+        startActivity(android.content.Intent.createChooser(i, AppStrings.t("Share page")))
     }
     private fun documentPicker(export: Boolean) {
         try {
@@ -482,41 +582,64 @@ class MainActivity : Activity() {
                 } catch (_: Exception) { "Unreachable" }
                 "${s.name} · $state"
             }
-            runOnUiThread { if (!isFinishing) { status.text = "Link checks finished"; AlertDialog.Builder(this).setTitle("Link health").setMessage(result).setPositiveButton("Close", null).show() } }
+            runOnUiThread { if (!isFinishing) { status.text = "Link checks finished"; ArenaDialog.Builder(this).setTitle("Link health").setMessage(result).setPositiveButton("Close", null).show() } }
         }
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+    private fun dpiQuickMenu(anchor: View) {
+        val controls = LinearLayout(this).apply { setPadding(dp(6), dp(6), dp(6), dp(6)); background = controlBackground(false) }
+        val popup = PopupWindow(controls, -2, -2, true).apply { setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)); elevation = dp(12).toFloat(); isOutsideTouchable = true }
+        controls.addView(button("⏻", routingMode() != "off") { prefs.edit().putString("dpiMode", if (routingMode() == "off") "auto" else "off").apply(); popup.dismiss(); updateDpi(true) }.apply { contentDescription = if (routingMode() == "off") "Turn on" else "Turn off" })
+        controls.addView(button("↻") { popup.dismiss(); updateDpi(true) }.apply { contentDescription = "Restart" })
+        AppStrings.watch(controls); popup.showAsDropDown(anchor, 0, dp(6))
+    }
+    private fun paintDpiStatus() {
+        dpiButton.text = "● DPI"
+        dpiButton.contentDescription = "DPI · $dpiState"
+        dpiButton.setTextColor(when (dpiState) { "Automatic", "Always bypass" -> Color.rgb(67,222,143); "Failed" -> Color.rgb(255,115,115); "Starting" -> gold; else -> Color.rgb(134,150,168) })
+    }
     private fun dpiMenu() {
         val p = dpiProxy
         val focusedHost = android.net.Uri.parse(pageSites[selectedKey]?.url ?: browser.url ?: "").host ?: "Unknown"
         val focusedReport = p?.describeHost(focusedHost) ?: "Proxy is off"
-        AlertDialog.Builder(this).setTitle("DPI bypass · $dpiState")
-            .setItems(arrayOf(if (dpiProxy == null) "Turn on" else "Turn off", "Restart", "Option 1 · 8-byte fragments", "Option 2 · 32-byte fragments", "Option 3 · 64-byte fragments", "Diagnostics · ${p?.connections?.get() ?: 0} routed connections", if (prefs.getBoolean("dpiTlsRecords", true)) "Try compatibility mode · preserve TLS record" else "Use TLS record fragmentation")) { _, n ->
-                if (n == 6) { prefs.edit().putBoolean("dpiTlsRecords", !prefs.getBoolean("dpiTlsRecords", true)).putBoolean("dpi", true).apply(); updateDpi(true); return@setItems }
-                if (n == 5) { AlertDialog.Builder(this).setTitle("Selected site diagnostics").setMessage("Mode: ${if (prefs.getBoolean("dpiTlsRecords", true)) "TLS record fragmentation" else "TCP writes, original TLS record"}\n\n$focusedReport\n\nSelected page error: ${loadErrors[browser] ?: "None recorded"}\n\nApp totals: ${p?.connections?.get() ?: 0} connections, ${p?.serverReplies?.get() ?: 0} server replies.\n\nBackground requests and video CDNs have separate host counters. Replies show received traffic, not verified page access.").setPositiveButton("Close", null).show(); return@setItems }
-                if (n >= 2) prefs.edit().putInt("dpiFragment", listOf(8, 32, 64)[n - 2]).putBoolean("dpi", true).apply()
-                else prefs.edit().putBoolean("dpi", if (n == 1) true else dpiProxy == null).apply()
+        ArenaDialog.Builder(this).setTitle("DPI bypass · $dpiState")
+            .setItems(arrayOf("Routing mode · ${routingMode()}", "Restart routing", "Option 1 · 8-byte fragments", "Option 2 · 32-byte fragments", "Option 3 · 64-byte fragments", "Diagnostics · ${p?.connections?.get() ?: 0} routed connections", if (prefs.getBoolean("dpiTlsRecords", true)) "Try compatibility mode · preserve TLS record" else "Use TLS record fragmentation")) { _, n ->
+                if (n == 0) { routingModeDialog(); return@setItems }
+                if (n == 6) { prefs.edit().putBoolean("dpiTlsRecords", !prefs.getBoolean("dpiTlsRecords", true)).apply(); updateDpi(true); return@setItems }
+                if (n == 5) { ArenaDialog.Builder(this).setTitle("Selected site diagnostics").setMessage("Mode: ${if (prefs.getBoolean("dpiTlsRecords", true)) "TLS record fragmentation" else "TCP writes, original TLS record"}\n\n$focusedReport\n\nSelected page error: ${loadErrors[browser] ?: "None recorded"}\n\nApp totals: ${p?.connections?.get() ?: 0} connections, ${p?.serverReplies?.get() ?: 0} server replies.\n\nBackground requests and video CDNs have separate host counters. Replies show received traffic, not verified page access.").setPositiveButton("Close", null).show(); return@setItems }
+                if (n >= 2) prefs.edit().putInt("dpiFragment", listOf(8, 32, 64)[n - 2]).apply()
                 updateDpi(true)
             }.setNegativeButton("Close", null).show()
     }
+    private fun routingModeDialog() {
+        val values = listOf("auto", "off", "always")
+        ArenaDialog.Builder(this).setTitle("Connection routing")
+            .setSingleChoiceItems(arrayOf("Automatic (recommended)", "Direct connection", "Always use bypass"), values.indexOf(routingMode())) { dialog, index ->
+                prefs.edit().putString("dpiMode", values[index]).apply()
+                automaticRoutes.reset(); dialog.dismiss(); updateDpi(true)
+            }.setNegativeButton("Cancel", null).show()
+    }
     private fun updateDpi(reload: Boolean) {
-        if (!WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) { dpiState = "Unsupported WebView"; dpiButton.text = "DPI · $dpiState"; return }
-        dpiState = "Starting"; dpiButton.text = "DPI · $dpiState"
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) { dpiState = "Unsupported WebView"; paintDpiStatus(); return }
+        dpiState = "Starting"; paintDpiStatus()
         val executor = java.util.concurrent.Executor { runOnUiThread(it) }
+        val generation = ++routingGeneration
         // Clear old routing before stopping its listener, then apply the replacement.
         ProxyController.getInstance().clearProxyOverride(executor) {
+            if (generation != routingGeneration || isFinishing) return@clearProxyOverride
             dpiProxy?.stop(); dpiProxy = null
-            if (!prefs.getBoolean("dpi", false)) { dpiState = "Off"; dpiButton.text = "DPI · Off"; if (reload) pages.values.forEach { it.reload() }; return@clearProxyOverride }
+            if (routingMode() == "off") { dpiState = "Direct"; paintDpiStatus(); if (reload) pages.values.forEach { it.reload() }; return@clearProxyOverride }
             try {
-                val proxy = DpiProxy(prefs.getInt("dpiFragment", 32).coerceIn(8, 64), tlsRecords = prefs.getBoolean("dpiTlsRecords", true))
+                val proxy = DpiProxy(prefs.getInt("dpiFragment", 32).coerceIn(8, 64), tlsRecords = prefs.getBoolean("dpiTlsRecords", true), routing = if (routingMode() == "auto") automaticRoutes else null)
                 val port = proxy.start(); dpiProxy = proxy
                 val config = ProxyConfig.Builder().addProxyRule("http://127.0.0.1:$port", "https").build()
                 ProxyController.getInstance().setProxyOverride(config, executor) {
-                    dpiState = "Proxy ready"; dpiButton.text = "DPI · Ready"
+                    if (generation != routingGeneration || isFinishing) return@setProxyOverride
+                    dpiState = if (routingMode() == "auto") "Automatic" else "Always bypass"; paintDpiStatus()
                     if (reload) pages.values.forEach { it.reload() }
                 }
-            } catch (e: Exception) { dpiProxy?.stop(); dpiProxy = null; dpiState = "Failed"; dpiButton.text = "DPI · Failed"; toast(e.message ?: "Could not start DPI bypass") }
+            } catch (e: Exception) { dpiProxy?.stop(); dpiProxy = null; dpiState = "Failed"; paintDpiStatus(); toast(e.message ?: "Could not start DPI bypass") }
         }
     }
     private fun volumeDialog(key: String) {
@@ -528,7 +651,7 @@ class MainActivity : Activity() {
             override fun onStopTrackingTouch(s: SeekBar?) {}
         }) }
         box.addView(mute); box.addView(slider)
-        AlertDialog.Builder(this).setTitle("Sound").setView(box).setPositiveButton("Done", null).show()
+        ArenaDialog.Builder(this).setTitle("Sound").setView(box).setPositiveButton("Done", null).show()
     }
     private fun settingsDialog() {
         val dialog = android.app.Dialog(this)
@@ -565,11 +688,14 @@ class MainActivity : Activity() {
             content.removeAllViews()
             when (n) {
                 0 -> {
-                    heading("App", "Football Arena · Android preview 1.8.10")
+                    heading("App", "Football Arena")
+                    row("Language", "Türkçe / English", action = { dialog.dismiss(); languageDialog() })
                     row("Restore session", "Remember the last page and layout.", "restore", true)
                     row("Passcode", "Ask for a four-digit code when the app starts.", action = { changePass() })
                     row("Export sites", "Save a JSON file compatible with the desktop app.", action = { documentPicker(true) })
                     row("Import sites", "Add sites from a saved JSON file.", action = { documentPicker(false) })
+                    row("Share current page", "", action = { sharePage() })
+                    row("Open current page in browser", "", action = { val url = browser.url; if (url != null && (url.startsWith("https://") || url.startsWith("http://"))) try { startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))) } catch (_: Exception) { toast("No external browser is installed") } })
                 }
                 1 -> {
                     heading("Sound & Video", "Control audio for each open pane.")
@@ -583,8 +709,8 @@ class MainActivity : Activity() {
                     row("Quick access", "Open the sites in your quick-access list.", action = { quickAccess() })
                 }
                 3 -> {
-                    heading("Network", "DPI uses encrypted DNS for this app’s HTTPS pages: Google Public DNS, with Cloudflare as fallback. Other apps are unchanged.")
-                    row("Experimental DPI bypass", "Resolves sites with DNS over HTTPS, then fragments TLS through the local proxy. Success depends on the network.", "dpi")
+                    heading("Network", "Automatic uses a direct connection first. On a connection failure it retries with encrypted DNS and DPI bypass for this site. Other apps are unchanged.")
+                    row("Connection routing", "Automatic tries direct first and retries network failures with bypass. Learned routes expire after four hours or when the site address changes.", action = { routingModeDialog() })
                     row("DPI options & diagnostics", "See routed connections, handshakes, errors, and fragment options.", action = { dpiMenu() })
                     row("Ad blocking", "Block known advertising hosts.", "adblock", true)
                     row("Auto-skip", "Attempt to skip supported video ads.", "autoskip", true)
@@ -595,6 +721,7 @@ class MainActivity : Activity() {
         section(0); dialog.setContentView(shell); dialog.show()
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
         dialog.window?.setLayout(if (leanback) dp(850) else -1, -1)
+        AppStrings.watch(shell)
     }
     private fun configureBrowser(view: WebView) {
         // Third-party players often use cookies and HTTP media within HTTPS pages.
@@ -610,7 +737,9 @@ class MainActivity : Activity() {
     }
     private fun closePane() {
         val page = pages.remove(selectedKey) ?: return
-        errorLabels.remove(page); loadErrors.remove(page)
+        errorLabels.remove(page); loadErrors.remove(page); historyButtons.remove(page)
+        addresses.remove(page)
+        viewSites.remove(page); safetyWarnings.remove(page)
         (page.parent as? android.view.ViewGroup)?.removeView(page); page.destroy()
         pageSites.remove(selectedKey)
         selectedKey = pages.keys.firstOrNull() ?: ""
@@ -647,7 +776,7 @@ class MainActivity : Activity() {
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         return true
     }
-    private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()
+    private fun toast(s: String) = Toast.makeText(this, AppStrings.t(s), Toast.LENGTH_SHORT).show()
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_BACK && ::browser.isInitialized) {
             if (exitVideo()) return true

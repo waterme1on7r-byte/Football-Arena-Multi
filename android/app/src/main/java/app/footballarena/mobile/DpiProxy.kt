@@ -13,17 +13,18 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** App-local CONNECT tunnel. TLS stays encrypted; no certificates or interception. */
-class DpiProxy(private val fragmentSize: Int, private val dns: SecureDns = SecureDns(), private val tlsRecords: Boolean = true, private val connector: ((String) -> Socket)? = null) {
+class DpiProxy(private val fragmentSize: Int, private val dns: SecureDns = SecureDns(), private val tlsRecords: Boolean = true, private val routing: AutoRouting? = null, private val connector: ((String) -> Socket)? = null) {
     private class HostStats {
         val connections = AtomicInteger(); val sent = AtomicInteger(); val replies = AtomicInteger(); val bytes = AtomicLong(); val failures = AtomicInteger()
         @Volatile var error = "None"
         @Volatile var addresses = "Not resolved yet"
+        @Volatile var route = "Waiting"
     }
     private val hosts = ConcurrentHashMap<String, HostStats>()
     private val clientHosts = ConcurrentHashMap<Socket, String>()
     fun describeHost(host: String): String {
         val s = hosts[host] ?: return "$host: no tunneled requests yet"
-        return "$host\nAddresses: ${s.addresses}\nConnections: ${s.connections.get()} · Handshakes: ${s.sent.get()}\nServer replies: ${s.replies.get()} · Bytes: ${s.bytes.get()}\nErrors: ${s.failures.get()}\nLast host error: ${s.error}"
+        return "$host\nRoute: ${s.route}\nAddresses: ${s.addresses}\nConnections: ${s.connections.get()} · Fragmented handshakes: ${s.sent.get()}\nServer replies: ${s.replies.get()} · Bytes: ${s.bytes.get()}\nErrors: ${s.failures.get()}\nLast host error: ${s.error}"
     }
     private fun recordFailure(client: Socket, message: String) {
         val host = clientHosts[client] ?: "Unknown host"
@@ -81,7 +82,13 @@ class DpiProxy(private val fragmentSize: Int, private val dns: SecureDns = Secur
         val stats = hosts.getOrPut(host) { HostStats() }
         stats.connections.incrementAndGet()
         connections.incrementAndGet(); lastHost = host
-        val remote = connector?.invoke(host) ?: connectHost(host)
+        var bypass = routing?.usesBypass(host) ?: true
+        val remote = connector?.invoke(host) ?: try { connectHost(host, bypass) } catch (e: Exception) {
+            if (bypass || routing?.retryWithBypass(host) != true) throw e
+            bypass = true
+            connectHost(host, true)
+        }
+        stats.route = if (bypass) "Encrypted DNS + fragmentation" else "Direct DNS, unchanged TLS"
         sockets.add(remote)
         try {
             remote.tcpNoDelay = true
@@ -98,15 +105,15 @@ class DpiProxy(private val fragmentSize: Int, private val dns: SecureDns = Secur
             read = 5
             while (read < record.size) { val n = inputTls.read(record, read, record.size - read); if (n < 0) return; read += n }
             val output = remote.getOutputStream()
-            var offset = if (tlsRecords) 5 else 0
+            if (!bypass) output.write(record)
+            var offset = if (!bypass) record.size else if (tlsRecords) 5 else 0
             while (offset < record.size) {
                 val n = minOf(fragmentSize, record.size - offset)
                 if (tlsRecords) output.write(byteArrayOf(head[0], head[1], head[2], (n shr 8).toByte(), n.toByte()))
                 output.write(record, offset, n); output.flush(); offset += n
                 if (offset < record.size) Thread.sleep(2)
             }
-            handshakes.incrementAndGet()
-            stats.sent.incrementAndGet()
+            if (bypass) { handshakes.incrementAndGet(); stats.sent.incrementAndGet() }
             client.soTimeout = 0
             remote.soTimeout = 15000
             val reported = AtomicBoolean()
@@ -138,8 +145,8 @@ class DpiProxy(private val fragmentSize: Int, private val dns: SecureDns = Secur
         } finally { sockets.remove(remote); remote.close() }
     }
 
-    private fun connectHost(host: String): Socket {
-        val addresses = dns.resolve(host).sortedBy { it is java.net.Inet6Address }
+    private fun connectHost(host: String, bypass: Boolean): Socket {
+        val addresses = (if (bypass) dns.resolve(host) else InetAddress.getAllByName(host).toList()).sortedBy { it is java.net.Inet6Address }
         hosts[host]?.addresses = addresses.joinToString { it.hostAddress ?: "?" }
         // Never let an untrusted page use the tunnel to reach local network services.
         val allowed = addresses.filter { !it.isAnyLocalAddress && !it.isLoopbackAddress && !it.isLinkLocalAddress && !it.isSiteLocalAddress && !it.isMulticastAddress }

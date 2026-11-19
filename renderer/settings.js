@@ -75,6 +75,7 @@ function passForm(mode, host, done) {
   f.append(...[cur, nw, again].filter(Boolean), save, btn("Cancel", done), msg); host.append(f); (cur || nw).focus();
 }
 function tabApp(p) {
+  p.append(row("Language", null, select([["tr", "Türkçe"], ["en", "English"]], S().language || "tr", value => FA_I18N.setLanguage(value), "Language")));
   p.append(sec("About"));
   p.append(row("Version", null, el("span", "stat", S().version || "")));
   const st = el("span", "stat"); st.id = "appUpdSt";

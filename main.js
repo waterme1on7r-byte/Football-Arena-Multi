@@ -294,7 +294,7 @@ function destroyChat() {   // chat off: close its window completely (also leaves
   chatAdmin = { admin: false, bans: [] }; send("chat:admin", chatAdmin);
 }
 let chatAdmin = { admin: false, bans: [] };
-const chatCfg = () => ({ nick: S.chat.nick, notify: S.chat.notify, sound: S.chat.sound, v: app.getVersion() });
+const chatCfg = () => ({ nick: S.chat.nick, notify: S.chat.notify, sound: S.chat.sound, v: app.getVersion(), language: S.language });
 function setChat(open) {
   if (open && !chatAllowed()) return;
   chatOpen = open;

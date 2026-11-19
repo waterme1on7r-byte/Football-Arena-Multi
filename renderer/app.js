@@ -591,6 +591,7 @@ arena.updStatus().then(st => { lastUpd = st || lastUpd; maybePromptUpdate(); }).
 async function showDialog(d) { pendingOpen++; try { await freeze(); } finally { pendingOpen--; } if (!d.open) d.showModal(); }
 for (const id of ["#setDlg", "#blDlg"]) $(id).addEventListener("close", refreshOverlay);
 window.FAI = {
+  refreshOverlay,
   ask, showDialog, exportSites, importSites, checkHealth: () => checkHealth(), syncRemote: m => syncRemote(!!m),
   S: () => S, upd: () => lastUpd,
   resetLocal() { try { localStorage.clear(); } catch {} location.reload(); },   // sites, order, layout, sound: back to the built-in defaults

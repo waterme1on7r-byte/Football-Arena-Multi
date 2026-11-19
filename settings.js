@@ -13,6 +13,8 @@ const DPI_PRESETS = {
 };
 
 const DEFAULTS = Object.freeze({
+  language: "tr",
+  languageChosen: false,
   clearOnExit: true,                       // delete cache + temporary data when the app closes
   restore: true,                           // remember layout and open sites on restart
   audio: { defaultVolume: 100, focusOnly: false },
@@ -33,6 +35,8 @@ function normalize(raw) {
   const D = DEFAULTS;
   const pass = isObj(r.pass) && /^[0-9a-f]{32}$/.test(String(r.pass.salt)) && /^[0-9a-f]{64}$/.test(String(r.pass.hash)) ? { salt: r.pass.salt, hash: r.pass.hash } : null;
   return {
+    language: oneOf(r.language, ["tr", "en"], "tr"),
+    languageChosen: bool(r.languageChosen, false),
     clearOnExit: bool(r.clearOnExit, D.clearOnExit),
     restore: bool(r.restore, D.restore),
     audio: { defaultVolume: int(a.defaultVolume, 0, 100, D.audio.defaultVolume), focusOnly: bool(a.focusOnly, D.audio.focusOnly) },
@@ -61,7 +65,7 @@ function normalize(raw) {
 function merge(cur, patch) {
   if (!isObj(patch)) return cur;
   const next = JSON.parse(JSON.stringify(cur));
-  for (const k of ["clearOnExit", "restore"]) if (k in patch) next[k] = patch[k];
+  for (const k of ["clearOnExit", "restore", "language", "languageChosen"]) if (k in patch) next[k] = patch[k];
   for (const g of ["audio", "links", "chat", "net"]) if (isObj(patch[g])) for (const k of Object.keys(next[g])) if (k in patch[g]) next[g][k] = patch[g][k];
   next.pass = cur.pass;
   return normalize(next);

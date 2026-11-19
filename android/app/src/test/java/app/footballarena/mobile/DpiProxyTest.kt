@@ -8,10 +8,11 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 class DpiProxyTest {
-    private fun runTunnel(reply: Boolean, records: Boolean = true) {
+    private fun runTunnel(reply: Boolean, records: Boolean = true, automaticDirect: Boolean = false) {
         val server = ServerSocket(0)
         val worker = Executors.newSingleThreadExecutor()
-        val proxy = DpiProxy(8, tlsRecords = records) { Socket("127.0.0.1", server.localPort) }
+        val routes = if (automaticDirect) AutoRouting().apply { registerSite("test", "https://test.example/") } else null
+        val proxy = DpiProxy(8, tlsRecords = records, routing = routes) { Socket("127.0.0.1", server.localPort) }
         val payload = ByteArray(16) { it.toByte() }
         val task = worker.submit {
             server.accept().use { peer ->
@@ -43,7 +44,7 @@ class DpiProxyTest {
                 if (reply) assertArrayEquals(byteArrayOf(22, 3, 3, 0, 1, 0), response) else assertEquals(0, response.size)
             }
             task.get(6, TimeUnit.SECONDS)
-            assertEquals(1, proxy.handshakes.get())
+            assertEquals(if (automaticDirect) 0 else 1, proxy.handshakes.get())
             assertTrue(proxy.describeHost("test.example").contains("Connections: 1"))
             if (reply) {
                 assertEquals(1, proxy.serverReplies.get()); assertEquals(6L, proxy.receivedBytes.get())
@@ -58,4 +59,5 @@ class DpiProxyTest {
     @Test fun relaysServerReplyAndDoesNotCountNormalClosureAsError() { runTunnel(true) }
     @Test fun reportsUpstreamClosureBeforeReply() { runTunnel(false) }
     @Test fun compatibilityModePreservesOriginalTlsRecord() { runTunnel(true, false) }
+    @Test fun automaticDirectDoesNotFragmentClientHandshake() { runTunnel(true, false, true) }
 }

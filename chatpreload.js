@@ -1,5 +1,6 @@
 const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("host", {
+  cfg: ipcRenderer.sendSync("settings:get"),
   config: () => ipcRenderer.invoke("chat:config"),
   minimize: () => ipcRenderer.send("chat:minimize"),
   unread: n => ipcRenderer.send("chat:unread", Number(n) || 0),
