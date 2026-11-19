@@ -47,7 +47,7 @@ class LiveContentBlockingTest {
             scenario.onActivity { activity ->
                 val sites=field("sites").get(activity) as List<*>
                 val site=sites.first { candidate -> candidate!!.javaClass.getDeclaredMethod("getId").apply { isAccessible=true }.invoke(candidate)==id }!!
-                MainActivity::class.java.getDeclaredMethods.single { it.name=="openSite" }.apply { isAccessible=true }.invoke(activity,site)
+                MainActivity::class.java.declaredMethods.single { it.name=="openSite" }.apply { isAccessible=true }.invoke(activity,site)
                 page=field("browser").get(activity) as WebView
             }
             val selector=JSONObject.quote(playerSelector)
@@ -88,4 +88,6 @@ class LiveContentBlockingTest {
     @Test fun mahsunFirstPartyBannersAndCustomPreroll() = checkSite("mahsunsports","#customIframe",".banner-container",true)
     @Test fun patronPromotionalBannersPreservePlayer() = checkSite("patronspor","iframe#player","#ustBannerLink,#altBannerLink,#footerBannerLink,.hellobar,.background-link")
     @Test fun ardaAdZonesPreservePlayer() = checkSite("ardaspor","#playerFrame","[id^='zone_'],a[href*='1xbet.com']")
+    @Test fun trgoalsBannersPreservePlayer() = checkSite("trgoals","#customIframe",".ads-container,.ads_single_font,.match-flow-ad")
+    @Test fun zeusBannersPreservePlayer() = checkSite("zeustv","#main-player-container","#ad-hellobar,#ad-top-banner,#ad-player-top,#ad-player-bottom,#ad-background,#page-skin-iframe")
 }

@@ -11,7 +11,7 @@
   const STRICT = /^(?:reklam[ıi]?\s*(?:ge[cç]|atla|kapat)|skip\s+(?:video\s+)?ads?|skip advertisement|ad\s*skip)\s*[›>»→▶►]*$/;
   const LOOSE = /^(?:ge[cç]|atla|skip|kapat|close|[×✕✖x])\s*[›>»→]*$/;
   const CTX = /(^|[\s_-])(ad|ads|advert|advertisement|reklam|vast|preroll|pre-roll|adsbygoogle)([\s_-]|$)/;
-  const KNOWN = '.jw-skip.jw-skippable,.ytp-ad-skip-button,.ytp-ad-skip-button-modern,.vjs-skip-button,.vast-skip-button,[data-skip-ad]';
+  const KNOWN = '#preroll-skip-btn,.jw-skip.jw-skippable,.ytp-ad-skip-button,.ytp-ad-skip-button-modern,.vjs-skip-button,.vast-skip-button,[data-skip-ad]';
   const clicked = new WeakMap();
   const tokens = e => String(e.className && e.className.baseVal !== undefined ? e.className.baseVal : e.className || "")
     .concat(" ", e.id || "").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
@@ -31,9 +31,18 @@
   const sportsLayout = () => sportsIds.has(siteId().replace(/-giris$/, '')) || /(^|\.)(?:ardaspor|inattv|taraftarium|patronizle|mahsunsports|netspor|zeustv|fctv33|extrabet|liveball)\d*\./i.test(location.hostname);
   const ardaLayout = () => siteId() === "ardaspor" || /(^|\.)ardaspor\d*\./i.test(location.hostname);
   const netsporLayout = () => siteId() === "netspor" || /(^|\.)netspor\d*\./i.test(location.hostname) || !!document.querySelector('iframe#videoPlayer[src*="event.html"]');
+  const advertisingFrame = element => {
+    if (!element.matches('iframe[src]')) return false;
+    try {
+      const url = new URL(element.src, location.href);
+      return url.hostname === 'traffmovie.com' || url.hostname.endsWith('.traffmovie.com') ||
+        (element.id === 'page-skin-iframe' && /\/ads\/background-render\.php$/.test(url.pathname));
+    } catch (_) { return false; }
+  };
   function hidePromotion(element) {
     // Never collapse a container that owns the actual player.
-    if (!element || element.matches('video,iframe') || element.querySelector('video,iframe')) return;
+    if (!element || element.matches('video') || (element.matches('iframe') && !advertisingFrame(element)) || element.querySelector('video') ||
+        Array.from(element.querySelectorAll('iframe')).some(frame => !advertisingFrame(frame))) return;
     if (!element.hasAttribute("data-fa-ad-hidden")) {
       element.setAttribute("data-fa-ad-hidden", "true"); marked.add(element);
       if (!adSeen.has(element)) { adSeen.add(element); stats.hiddenPromotions++; }
@@ -54,7 +63,7 @@
         const bannerLabel = /\b(?:banner|advertisement|reklam)\b/i.test(image.alt || '');
         const widePromotion = sportsLayout() && bounds.width >= 250 && bounds.height > 0 && bounds.width / bounds.height >= 3.5;
         if (bannerLabel || widePromotion) {
-          hidePromotion(anchor.closest('.banner-container,.banner-container-std,.mobile-top-banner,.channel-ad-item') || anchor);
+          hidePromotion(anchor.closest('.banner-container,.banner-container-std,.mobile-top-banner,.channel-ad-item,.ads-container') || anchor);
         }
       } catch (_) {}
     }
@@ -68,6 +77,17 @@
     }
     if (siteId() === 'mahsunsports' || /(^|\.)mahsunsports\d*\./i.test(location.hostname)) {
       document.querySelectorAll('#openWheelBtn').forEach(hidePromotion);
+    }
+    if (sportsLayout()) {
+      document.querySelectorAll('.ads-container,.ads_single_font,.match-flow-ad,#ad-hellobar,#ad-top-banner,#ad-player-top,#ad-player-bottom,#ad-background').forEach(hidePromotion);
+      document.querySelectorAll('iframe[src]').forEach(frame => {
+        if (!advertisingFrame(frame)) return;
+        hidePromotion(frame);
+        let ancestor = frame.parentElement;
+        for (let i = 0; ancestor && ancestor !== document.body && i < 4; i++, ancestor = ancestor.parentElement) {
+          if (/^(?:zone_\d+|a[0-9a-f]{16})$/i.test(ancestor.id)) hidePromotion(ancestor);
+        }
+      });
     }
     // Player documents have no parent page's banner layout; match the observed ad-only overlay.
     if (document.querySelector('#preroll-container #preroll-video') && document.querySelector('#skip-ad-btn[onclick*="skipAd"]')) {

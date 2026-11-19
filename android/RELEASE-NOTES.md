@@ -1,4 +1,4 @@
-Android 1.8.30 preview
+Android 1.8.31 preview
 
 - Fix live-site advertising missed by network-only rules: remove observed first-party banner slots, external promotional banner images, Arda ad zones, Patron promotional bars and Mahsun's bonus-wheel control.
 - Block the traffmovie.com ad network observed on Arda, including subdomains.
@@ -7,6 +7,7 @@ Android 1.8.30 preview
 - Assign stable site profiles before navigation so rotating domains and embedded frames retain the correct rules.
 - Add hidden-promotional-element counts alongside network-block counters in diagnostics.
 - Add public live-site Android checks with before/after screenshots for Arda, Netspor, Mahsun and Patron. Unreachable/challenged live sites are explicitly reported as skipped rather than verified.
+- Cover TRGOALS banner strips and Zeus banner/skin frames; retain legitimate player frames. Include live checks for those layouts too.
 
 Previous improvements retained:
 
