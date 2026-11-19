@@ -59,10 +59,13 @@
       if (e.childElementCount > 3 && !e.matches(KNOWN)) continue;
       const labels = [e.getAttribute("aria-label"), e.getAttribute("title"), e.textContent].map(normalize).filter(Boolean);
       const known = e.matches(KNOWN);
-      if (!known && !labels.some(t => t.length < 60 && (STRICT.test(t) || (LOOSE.test(t) && inAdCtx(e))))) continue;
-      const target = e.closest('button,a,[role="button"]') || e;
+      const explicit = labels.some(t => t.length < 60 && STRICT.test(t));
+      if (!known && !explicit && !labels.some(t => t.length < 60 && LOOSE.test(t) && inAdCtx(e))) continue;
+      const target = e.closest('button,a,[role="button"],[onclick]') || e;
+      // Click the leaf label once when a non-semantic wrapper has the same text.
+      if (!known && target === e && Array.from(e.children).some(c => normalize(c.textContent) === normalize(e.textContent))) continue;
       if (seen.has(target)) continue; seen.add(target);
-      if (!known && target === e && !e.matches('button,a,[role="button"]') && !e.onclick && !e.hasAttribute("onclick")) continue;
+      if (!known && !explicit && target === e && !e.matches('button,a,[role="button"]') && !e.onclick && !e.hasAttribute("onclick")) continue;
       if (target.disabled || target.getAttribute("aria-disabled") === "true" || !visible(target)) continue;
       // Wait for countdown controls to become available rather than repeatedly pressing them.
       if (labels.some(t => /\b[1-9][0-9]*\s*(?:s|sn|sec|seconds?|saniye)?\b/.test(t))) continue;

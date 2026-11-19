@@ -23,13 +23,21 @@ class AutoSkipIntegrationTest {
             assertTrue(latch.await(3, TimeUnit.SECONDS)); if (result == "true") return
             Thread.sleep(100)
         }
-        fail("Fixture did not reach: $expression")
+        var snapshot = ""; val latch = CountDownLatch(1)
+        scenario.onActivity { view.evaluateJavascript("JSON.stringify({upper:window.upper,icon:window.icon,jw:window.jw,countdown:window.countdown,custom:window.custom,adPosition:window.adPosition,width:innerWidth,hidden:document.hidden})") { snapshot = it; latch.countDown() } }
+        latch.await(3,TimeUnit.SECONDS)
+        fail("Fixture did not reach: $expression; snapshot=$snapshot")
     }
     private fun create(a: MainActivity, html: (WebResourceRequest) -> String): WebView {
         val page = MainActivity::class.java.getDeclaredMethod("createPage").apply { isAccessible = true }.invoke(a) as WebView
         page.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(v: WebView, request: WebResourceRequest) = WebResourceResponse("text/html", "UTF-8", html(request).byteInputStream())
         }
+        fun field(name: String) = MainActivity::class.java.getDeclaredField(name).apply { isAccessible = true }
+        @Suppress("UNCHECKED_CAST") val pages = field("pages").get(a) as MutableMap<String,WebView>
+        pages["fixture"] = page
+        field("selectedKey").set(a,"fixture"); field("browser").set(a,page)
+        MainActivity::class.java.getDeclaredMethod("renderPages").apply { isAccessible = true }.invoke(a)
         return page
     }
     @Test fun uppercaseLabelsIconButtonsAndCountdownsWorkWithoutMutingOrSeekingTheMatch() {
@@ -39,11 +47,13 @@ class AutoSkipIntegrationTest {
             <button onclick="window.upper=true">SKIP AD</button>
             <button aria-label="Skip video ad" onclick="window.icon=true">▶</button>
             <div class="jw-skip jw-skippable" role="button" onclick="window.jw=true"><span>»</span></div>
-            <button id="timer" class="vjs-skip-button" disabled onclick="window.countdown=true">Skip ad in 5</button>
+            <div id="customSkip"><span>Skip ad</span></div>
+            <button id="timer" class="vjs-skip-button" onclick="window.countdown=true">Skip ad in 5</button>
             <video id="match"></video><div class="advertisement"><video id="ad"></video></div>
             <div class="ad-banner" id="banner">Advertising</div>
             <script>
             window.token=Math.random();window.originalToken=window.token;
+            customSkip.addEventListener('click',()=>window.custom=(window.custom||0)+1);
             Object.defineProperty(match,'duration',{get:()=>Infinity});
             Object.defineProperty(match,'currentTime',{get:()=>90,set:()=>window.matchSeek=true});
             Object.defineProperty(ad,'duration',{get:()=>30});
@@ -54,14 +64,13 @@ class AutoSkipIntegrationTest {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             lateinit var page: WebView
             scenario.onActivity { a -> page = create(a) { html }; page.loadUrl("https://fixture.example/player") }
-            awaitJs(scenario, page, "window.upper&&window.icon&&window.jw&&window.countdown&&window.adPosition===30")
+            awaitJs(scenario, page, "window.upper&&window.icon&&window.jw&&window.custom===1&&window.countdown&&window.adPosition===30")
             awaitJs(scenario, page, "!window.wrong&&!window.clickedEarly&&!window.matchSeek&&!match.muted&&!ad.muted&&window.token===window.originalToken&&getComputedStyle(banner).display==='none'")
             scenario.onActivity { a ->
                 a.getSharedPreferences("football-arena",0).edit().putBoolean("adblock", false).commit()
                 MainActivity::class.java.getDeclaredMethod("runAutoSkip",WebView::class.java).apply { isAccessible = true }.invoke(a,page)
             }
             awaitJs(scenario, page, "getComputedStyle(banner).display!=='none'&&window.token===window.originalToken")
-            scenario.onActivity { page.destroy() }
         }
     }
     @Test fun nestedFramesReceiveLiveSettingsAndNewPlayersHandshakeWithoutPageReloads() {
@@ -89,7 +98,6 @@ class AutoSkipIntegrationTest {
             awaitJs(scenario,page,"window.nestedSkipped===true&&window.token===window.originalToken")
             // A later frame starts with the original disabled bootstrap and requests the current parent settings.
             awaitJs(scenario,page,"window.__faContentStats.skipActions>=2&&window.token===window.originalToken")
-            scenario.onActivity { page.destroy() }
         }
     }
 }

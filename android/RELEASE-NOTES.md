@@ -1,4 +1,4 @@
-Android 1.8.27 preview
+Android 1.8.28 preview
 
 - Load a bundled Peter Lowe advertising/tracking-host snapshot (3,568 domains) alongside existing network rules, with domain-boundary matching.
 - Apply the same blocking preference to page/frame requests, ad navigations, new-window links and service-worker fetches. Blocked responses are not cached.
