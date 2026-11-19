@@ -24,7 +24,7 @@ class AutoSkipIntegrationTest {
             Thread.sleep(100)
         }
         var snapshot = ""; val latch = CountDownLatch(1)
-        scenario.onActivity { view.evaluateJavascript("JSON.stringify({error:window.__faContentError,commit:window.fixtureCommit,finish:window.fixtureFinish,stats:window.__faContentStats,upper:window.upper,icon:window.icon,jw:window.jw,countdown:window.countdown,custom:window.custom,adPosition:window.adPosition,width:innerWidth,hidden:document.hidden})") { snapshot = it; latch.countDown() } }
+        scenario.onActivity { view.evaluateJavascript("JSON.stringify({error:window.__faContentError,commit:window.fixtureCommit,finish:window.fixtureFinish,stats:window.__faContentStats,frames:Array.from(document.querySelectorAll('iframe')).map(f=>{try{return {url:f.contentDocument.URL,hidden:f.contentDocument.hidden,stats:f.contentWindow.__faContentStats,off:f.contentWindow.__faAdOff,html:f.contentDocument.body.innerHTML}}catch(e){return String(e)}}),width:innerWidth,hidden:document.hidden})") { snapshot = it; latch.countDown() } }
         latch.await(3,TimeUnit.SECONDS)
         fail("Fixture did not reach: $expression; snapshot=$snapshot")
     }
