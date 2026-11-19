@@ -46,6 +46,7 @@ class AutoSkipIntegrationTest {
             <button onclick="window.wrong=true">Close</button>
             <button onclick="window.upper=true">SKIP AD</button>
             <button aria-label="Skip video ad" onclick="window.icon=true">▶</button>
+            <button aria-label="Skip ad" onclick="window.svg=true"><svg width="24" height="24"><path d="M2 2L22 12L2 22Z"/></svg></button>
             <div class="jw-skip jw-skippable" role="button" onclick="window.jw=true"><span>»</span></div>
             <div id="customSkip"><span>Skip ad</span></div>
             <button id="timer" class="vjs-skip-button" onclick="window.countdown=true">Skip ad in 5</button>
@@ -53,7 +54,7 @@ class AutoSkipIntegrationTest {
             <div class="ad-banner" id="banner">Advertising</div>
             <script>
             window.token=Math.random();window.originalToken=window.token;
-            customSkip.addEventListener('click',()=>window.custom=(window.custom||0)+1);
+            customSkip.addEventListener('click',()=>{window.custom=(window.custom||0)+1;customSkip.remove();});
             Object.defineProperty(match,'duration',{get:()=>Infinity});
             Object.defineProperty(match,'currentTime',{get:()=>90,set:()=>window.matchSeek=true});
             Object.defineProperty(ad,'duration',{get:()=>30});
@@ -64,7 +65,7 @@ class AutoSkipIntegrationTest {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             lateinit var page: WebView
             scenario.onActivity { a -> page = create(a) { html }; page.loadUrl("https://fixture.example/player") }
-            awaitJs(scenario, page, "window.upper&&window.icon&&window.jw&&window.custom===1&&window.countdown&&window.adPosition===30")
+            awaitJs(scenario, page, "window.upper&&window.icon&&window.svg&&window.jw&&window.custom===1&&window.countdown&&window.adPosition===30")
             awaitJs(scenario, page, "!window.wrong&&!window.clickedEarly&&!window.matchSeek&&!match.muted&&!ad.muted&&window.token===window.originalToken&&getComputedStyle(banner).display==='none'")
             scenario.onActivity { a ->
                 a.getSharedPreferences("football-arena",0).edit().putBoolean("adblock", false).commit()
