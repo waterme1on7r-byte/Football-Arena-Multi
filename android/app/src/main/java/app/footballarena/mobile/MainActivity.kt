@@ -277,6 +277,9 @@ class MainActivity : Activity() {
                     safetyWarnings.remove(view)
                     android.net.Uri.parse(url).host?.let { host -> viewSites[view]?.let { automaticRoutes.registerHost(it, host) } }
                     if (view === browser) { status.text = "Loading…"; paintDpiStatus() }
+                    for (delay in listOf(250L, 1000L, 3000L)) view.postDelayed({
+                        if (!isFinishing && viewSites.containsKey(view) && view !in safetyWarnings) runAutoSkip(view)
+                    }, delay)
                 }
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     val u = request.url.toString()
@@ -313,6 +316,7 @@ class MainActivity : Activity() {
                 override fun onPageCommitVisible(view: WebView, url: String) {
                     if (!loadErrors.containsKey(view) && view !in safetyWarnings && url.startsWith("https://") && dpiProxy != null && (routingMode() == "always" || android.net.Uri.parse(url).host?.let { automaticRoutes.usesBypass(it) } == true)) bypassPages.add(view)
                     paintDpiStatus()
+                    if (!loadErrors.containsKey(view) && view !in safetyWarnings) runAutoSkip(view)
                 }
                 override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
                     if (!request.isForMainFrame) resourceErrors[view] = "${request.url}\n${error.description}"
@@ -755,7 +759,7 @@ class MainActivity : Activity() {
                 AppStrings.t("Auto-skip") + ": " + state("autoskip"),
                 AppStrings.t("Skip buttons pressed on this page") + ": " + stats.optInt("skipActions"),
                 AppStrings.t("Promotional elements hidden on this page") + ": " + stats.optInt("hiddenPromotions"),
-                AppStrings.t("Embedded-player support") + ": " + AppStrings.t(if (frameSupport) "Available" else "Update Android System WebView for embedded-player auto-skip."),
+                AppStrings.t("Embedded-player support") + ": " + AppStrings.t(if (frameSupport) "Available" else "Same-site player fallback available. Update WebView for cross-site players."),
                 "WebView: ${engine ?: "Unknown"}"
             )
             ArenaDialog.Builder(this).setTitle("Ad blocking diagnostics").setMessage(lines.joinToString("\n")).setPositiveButton("Close", null).show()

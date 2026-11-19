@@ -23,6 +23,7 @@ object AppStrings {
             "Ad blocking diagnostics" to "Reklam engelleme tanılaması",
             "Check blocking activity and embedded-player support." to "Engelleme etkinliğini ve gömülü oynatıcı desteğini kontrol edin.",
             "Advertising domains" to "Reklam alan adları",
+            "Same-site player fallback available. Update WebView for cross-site players." to "Aynı sitedeki oynatıcılar destekleniyor. Farklı sitelerdeki oynatıcılar için WebView'i güncelleyin.",
             "Promotional elements hidden on this page" to "Bu sayfada gizlenen reklam öğeleri",
             "Requests blocked this session" to "Bu oturumda engellenen istekler",
             "Service-worker requests blocked" to "Engellenen servis çalışanı istekleri",

@@ -1,4 +1,8 @@
-Android 1.8.33 preview
+Android 1.8.34 preview
+
+- Remove the promotional main-player poster left behind after Netspor/Mahsun pre-roll skipping, while retaining the play control.
+- Apply same-origin player rules on older WebViews without document-start support, and inject fallback rules as pages become visible.
+- Capture live-site checks after renderer frames reach the compositor and include DOM reports beside screenshots.
 
 - Fix live-site advertising missed by network-only rules: remove observed first-party banner slots, external promotional banner images, Arda ad zones, Patron promotional bars and Mahsun's bonus-wheel control.
 - Block the traffmovie.com ad network observed on Arda, including subdomains.

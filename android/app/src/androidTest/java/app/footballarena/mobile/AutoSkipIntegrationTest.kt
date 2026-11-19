@@ -50,9 +50,9 @@ class AutoSkipIntegrationTest {
             </body></html>"""
         val player = """<html><head><style>#skip-ad-btn{display:none}#preroll-container{width:300px;height:180px}</style></head><body>
             <div id="preroll-container"><video id="preroll-video"></video><button id="skip-ad-btn" onclick="skipAd(event)">Reklamı Geç ▶</button></div>
-            <div id="player-container" style="display:none"><video id="match"></video></div>
+            <div id="player-container" style="display:none"><video id="match" poster="https://media.example/promotion.jpg"></video><div data-poster style="background-image:url('https://media.example/promotion.jpg')"><button id="mainPlay">Play match</button></div></div>
             <div id="splash-banner"><a href="https://promo.invalid/"><img width="300" height="60"></a></div>
-            <script>function skipAd(e){e.preventDefault();e.stopPropagation();document.getElementById('preroll-container').style.display='none';document.getElementById('player-container').style.display='block';parent.postMessage('main-player-started','*');}</script>
+            <script>function skipAd(e){e.preventDefault();e.stopPropagation();document.getElementById('preroll-container').style.display='none';document.getElementById('player-container').style.display='block';parent.postMessage('main-player-started','*');}addEventListener('message',e=>{if(e.data==='check-poster'){parent.postMessage({posterCleared:getComputedStyle(document.querySelector('[data-poster]')).backgroundImage==='none'&&!match.hasAttribute('poster')&&mainPlay.getBoundingClientRect().height>0},'*');}});</script>
             </body></html>"""
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             lateinit var page: WebView
@@ -64,6 +64,8 @@ class AutoSkipIntegrationTest {
                 MainActivity::class.java.getDeclaredMethod("loadPage",WebView::class.java,String::class.java).apply { isAccessible=true }.invoke(a,page,"https://rotated.example/")
             }
             awaitJs(scenario,page,"window.started===true&&getComputedStyle(document.querySelector('.banner-container.fullwidth')).display==='none'&&getComputedStyle(logo).display!=='none'&&videoPlayer.getBoundingClientRect().width>0&&window.token===window.original")
+            scenario.onActivity { page.evaluateJavascript("addEventListener('message',e=>{if(e.data&&e.data.posterCleared)window.posterCleared=true;});videoPlayer.contentWindow.postMessage('check-poster','*')",null) }
+            awaitJs(scenario,page,"window.posterCleared===true")
             scenario.onActivity { a ->
                 a.getSharedPreferences("football-arena",0).edit().putBoolean("adblock",false).putBoolean("autoskip",false).commit()
                 MainActivity::class.java.getDeclaredMethod("runAutoSkip",WebView::class.java).apply { isAccessible=true }.invoke(a,page)
@@ -100,6 +102,26 @@ class AutoSkipIntegrationTest {
                 MainActivity::class.java.getDeclaredMethod("runAutoSkip",WebView::class.java).apply { isAccessible=true }.invoke(a,page)
             }
             awaitJs(scenario,page,"getComputedStyle(document.body).backgroundImage!=='none'&&getComputedStyle(document.querySelector('.banner-container')).display!=='none'&&window.token===window.original")
+        }
+    }
+    @Test fun sameOriginPlayerWorksWithoutDocumentStartInjection() {
+        prepare()
+        val root="""<html><body><script>addEventListener('message',e=>{if(e.data==='fallback-skipped')window.skipped=true;});</script><iframe src="/frame" width="500" height="300"></iframe></body></html>"""
+        val player="""<html><body><button onclick="parent.postMessage('fallback-skipped','*')">SKIP AD</button></body></html>"""
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            lateinit var page:WebView
+            scenario.onActivity { a ->
+                page=create(a) { if(it.url.path=="/frame")player else root }
+                @Suppress("UNCHECKED_CAST") val handlers=MainActivity::class.java.getDeclaredField("contentScripts").apply { isAccessible=true }.get(a) as MutableMap<WebView,androidx.webkit.ScriptHandler>
+                handlers.remove(page)?.remove()
+                val nativeClient=MainActivity::class.java.getDeclaredMethod("makePageClient").apply { isAccessible=true }.invoke(a) as WebViewClient
+                page.webViewClient=object:WebViewClient() {
+                    override fun shouldInterceptRequest(view:WebView,request:WebResourceRequest)=WebResourceResponse("text/html","UTF-8",(if(request.url.path=="/frame")player else root).byteInputStream())
+                    override fun onPageCommitVisible(view:WebView,url:String)=nativeClient.onPageCommitVisible(view,url)
+                }
+                page.loadUrl("https://fixture.example/")
+            }
+            awaitJs(scenario,page,"window.skipped===true&&window.__faContentStats.skipActions>0")
         }
     }
     @Test fun uppercaseLabelsIconButtonsAndCountdownsWorkWithoutMutingOrSeekingTheMatch() {

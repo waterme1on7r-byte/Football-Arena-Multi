@@ -11,6 +11,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import org.json.JSONArray
 import org.json.JSONObject
 
 /** Public live-site checks. Unreachable/challenged sites are reported as skipped, never as verified. */
@@ -31,11 +32,22 @@ class LiveContentBlockingTest {
         }
         return false
     }
-    private fun screenshot(name:String) {
+    private fun screenshot(name:String,page:WebView,adSelector:String) {
         // Animated live banners can keep the UI busy forever. Capture the current compositor frame.
+        val paintToken=java.util.UUID.randomUUID().toString()
+        evaluate(page,"requestAnimationFrame(()=>requestAnimationFrame(()=>window.__faPaintReady=${JSONObject.quote(paintToken)}));true")
+        awaitBoolean(page,"window.__faPaintReady===${JSONObject.quote(paintToken)}",3000)
+        Thread.sleep(400) // Allow the renderer frame to reach Android's compositor; never wait for UI idle.
         for(command in listOf("mkdir -p /data/local/tmp/football-arena-ui", "screencap -p /data/local/tmp/football-arena-ui/$name.png")) {
             android.os.ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand(command)).use { it.readBytes() }
         }
+        val raw=evaluate(page,"""JSON.stringify({url:location.href,ready:document.readyState,site:window.__faSiteId,enabled:window.__faBlockAds,stats:window.__faContentStats,
+            ads:Array.from(document.querySelectorAll(${JSONObject.quote(adSelector)})).slice(0,30).map(e=>({id:e.id,cls:e.className,height:e.getBoundingClientRect().height,display:getComputedStyle(e).display,marked:!!e.closest('[data-fa-ad-hidden]')})),
+            banners:Array.from(document.querySelectorAll('a img')).slice(0,25).map(e=>({alt:e.alt,height:e.getBoundingClientRect().height,marked:!!e.closest('[data-fa-ad-hidden]')})),
+            frames:Array.from(document.querySelectorAll('iframe')).slice(0,8).map(e=>({id:e.id,src:e.getAttribute('src'),height:e.getBoundingClientRect().height}))})""")
+        val summary=runCatching { JSONArray("[$raw]").getString(0) }.getOrDefault(raw)
+        val quoted="'"+summary.replace("'","'\\''")+"'"
+        android.os.ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand("printf %s $quoted > /data/local/tmp/football-arena-ui/$name.json")).use { it.readBytes() }
     }
     private fun checkSite(id:String,playerSelector:String,adSelector:String,preRoll:Boolean=false) {
         instrumentation.targetContext.getSharedPreferences("football-arena",0).edit().clear()
@@ -52,13 +64,14 @@ class LiveContentBlockingTest {
             try {
             val selector=JSONObject.quote(playerSelector)
             val reachable=awaitBoolean(page,"!!document.querySelector($selector)")
-            if(!reachable)screenshot("live-$id-unavailable")
+            if(!reachable)screenshot("live-$id-unavailable",page,adSelector)
             assumeTrue("Live $id was unreachable or challenged; no live-ad result is claimed",reachable)
             evaluate(page,"window.__faLiveDocumentToken='${java.util.UUID.randomUUID()}';window.__faLiveOriginalToken=window.__faLiveDocumentToken;true")
             // Wait for an actual promotion where possible; a site may not return an ad for this location.
             val ads=JSONObject.quote(adSelector)
             awaitBoolean(page,"Array.from(document.querySelectorAll($ads)).some(e=>e.getBoundingClientRect().height>0)",10000)
-            screenshot("live-$id-before")
+            screenshot("live-$id-before",page,adSelector)
+            assertTrue("Live $id ad selectors matched no elements; cannot claim live filtering verification",evaluate(page,"document.querySelectorAll($ads).length>0")=="true")
             instrumentation.runOnMainSync {
                 val activity=page.context as MainActivity
                 activity.getSharedPreferences("football-arena",0).edit().putBoolean("adblock",true).putBoolean("autoskip",true).commit()
@@ -72,16 +85,18 @@ class LiveContentBlockingTest {
                     &&(${JSONObject.quote(id)}!=='patronspor'||getComputedStyle(document.body).backgroundImage==='none')
                     &&window.__faLiveDocumentToken===window.__faLiveOriginalToken;
             })()""")
-            screenshot("live-$id-after")
+            screenshot("live-$id-after",page,adSelector)
             assertTrue("Live $id still has visible banners or lost its player",cleaned)
             if(preRoll) {
                 val skipped=awaitBoolean(page,"""(()=>{try{
                     const frame=document.querySelector($selector);const doc=frame.contentDocument;
                     const ad=doc&&doc.querySelector('#preroll-container');const main=doc&&doc.querySelector('#player-container');
                     return !!ad&&!!main&&frame.contentWindow.getComputedStyle(ad).display==='none'
-                        &&main.getBoundingClientRect().width>0&&main.getBoundingClientRect().height>0;
+                        &&main.getBoundingClientRect().width>0&&main.getBoundingClientRect().height>0
+                        &&Array.from(main.querySelectorAll('[data-poster],.poster-container')).every(e=>frame.contentWindow.getComputedStyle(e).backgroundImage==='none')
+                        &&main.querySelectorAll('video[poster]').length===0;
                 }catch(e){return false;}})()""",45000)
-                screenshot("live-$id-player-after")
+                screenshot("live-$id-player-after",page,adSelector)
                 assertTrue("Live $id did not transition from its custom pre-roll to the main player",skipped)
             }
             } finally {

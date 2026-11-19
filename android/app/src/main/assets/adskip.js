@@ -1,7 +1,17 @@
 // Runs immediately in every new document, including cross-origin player frames.
-(() => {
-  if (window.__faAd) return;
+(function boot(window) {
+  const document = window.document;
+  const parent = window.parent;
+  const location = window.location;
+  const getComputedStyle = window.getComputedStyle.bind(window);
+  const addEventListener = window.addEventListener.bind(window);
+  const setInterval = window.setInterval.bind(window);
+  const setTimeout = window.setTimeout.bind(window);
+  const clearTimeout = window.clearTimeout.bind(window);
+  const MutationObserver = window.MutationObserver;
+  if (window.__faAd && window.__faAdDocument === document) return;
   window.__faAd = true;
+  window.__faAdDocument = document;
   const stats = window.__faContentStats = { skipActions: 0, hiddenPromotions: 0 };
   const TYPE = "football-arena-content-settings";
   const READY = "football-arena-content-ready";
@@ -21,10 +31,27 @@
     return r.width > 0 && r.height > 0 && cs.visibility !== "hidden" && cs.display !== "none" && cs.opacity !== "0" && (!interactive || cs.pointerEvents !== "none");
   };
   const frames = () => Array.from(document.querySelectorAll("iframe"));
+  function hydrateSameOriginFrames() {
+    // Older WebViews cannot inject at document start in all frames. First-party player
+    // documents are still accessible through the normal same-origin DOM API; no eval/CSP bypass.
+    for (const frame of frames()) {
+      try {
+        const child = frame.contentWindow; const doc = frame.contentDocument;
+        if (!child || !doc || !doc.documentElement || (doc.URL === 'about:blank' && (!doc.body || !doc.body.childElementCount))) continue;
+        if (child.__faAdDocument !== doc) {
+          child.__faSiteId = window.__faSiteId;
+          child.__faAdOff = window.__faAdOff; child.__faBlockAds = window.__faBlockAds;
+          boot(child);
+        }
+      } catch (_) { /* Cross-origin frames require WebView's document-start feature. */ }
+    }
+  }
   const settings = () => ({ type: TYPE, skipOff: !!window.__faAdOff, blockAds: !!window.__faBlockAds });
   const send = (target, data) => { try { target.postMessage(data, "*"); } catch (_) {} };
   const action = () => { stats.skipActions++; if (parent !== window) send(parent, { type: ACTION }); };
   const marked = new Set();
+  const maskedPosters = new Set();
+  const videoPosters = new Map();
   const adSeen = new WeakSet();
   const siteId = () => window.__faSiteId || "";
   const sportsIds = new Set(['ardaspor','inatbox','trgoals','patronspor','mahsunsports','netspor','zeustv','fctv33','extratv','liveball']);
@@ -51,7 +78,9 @@
   function filterPromotions() {
     if (!window.__faBlockAds) {
       for (const element of marked) element.removeAttribute("data-fa-ad-hidden");
-      marked.clear(); return;
+      for (const element of maskedPosters) element.removeAttribute("data-fa-ad-poster");
+      for (const [video, poster] of videoPosters) if (video.isConnected) video.setAttribute('poster',poster);
+      marked.clear(); maskedPosters.clear(); videoPosters.clear(); return;
     }
     // These are image advertisements embedded directly in otherwise ordinary site HTML/CDNs.
     // Domain blocking alone cannot remove them without also breaking legitimate images.
@@ -92,9 +121,22 @@
     }
     // Player documents have no parent page's banner layout; match the observed ad-only overlay.
     if (document.querySelector('#preroll-container #preroll-video') && document.querySelector('#skip-ad-btn[onclick*="skipAd"]')) {
-      document.querySelectorAll('#splash-banner').forEach(hidePromotion);
+      document.querySelectorAll('#splash-banner,#player-logo').forEach(hidePromotion);
+      // This player's default main-player poster repeats the advertisement. Keep its play
+      // button/controls and video element; remove only that promotional background/poster.
+      for (const poster of document.querySelectorAll('#player-container [data-poster],#player-container .poster-container')) {
+        if (!poster.hasAttribute('data-fa-ad-poster')) {
+          poster.setAttribute('data-fa-ad-poster','true'); maskedPosters.add(poster);
+          if (!adSeen.has(poster)) { adSeen.add(poster); stats.hiddenPromotions++; }
+        }
+      }
+      for (const video of document.querySelectorAll('#player-container video[poster]')) {
+        videoPosters.set(video,video.getAttribute('poster')); video.removeAttribute('poster');
+      }
     }
     for (const element of marked) if (!element.isConnected) marked.delete(element);
+    for (const element of maskedPosters) if (!element.isConnected) maskedPosters.delete(element);
+    for (const video of videoPosters.keys()) if (!video.isConnected) videoPosters.delete(video);
   }
   let style;
   function sync() {
@@ -102,11 +144,12 @@
     if (!style) {
       style = document.createElement("style");
       // Restrict cosmetics to dedicated banner slots, never the player/pre-roll container.
-      style.textContent = '[data-fa-ad-hidden="true"],ins.adsbygoogle,iframe[id^="google_ads_iframe"],.ad-banner,.advertisement-banner,.popunder{display:none!important}html[data-fa-ad-skin-hidden="true"] body{background-image:none!important}';
+      style.textContent = '[data-fa-ad-hidden="true"],ins.adsbygoogle,iframe[id^="google_ads_iframe"],.ad-banner,.advertisement-banner,.popunder{display:none!important}html[data-fa-ad-skin-hidden="true"] body,[data-fa-ad-poster="true"]{background-image:none!important}';
     }
     if (!style.isConnected) (document.head || document.documentElement).appendChild(style);
     style.disabled = !window.__faBlockAds;
     filterPromotions();
+    hydrateSameOriginFrames();
   }
   window.__faApplyContentSettings = data => {
     window.__faAdOff = !!data.skipOff; window.__faBlockAds = !!data.blockAds;
@@ -171,4 +214,4 @@
   }).observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style", "disabled", "aria-disabled", "aria-label", "title"] });
   setInterval(() => { sync(); scan(); }, 750);
   ready();
-})();
+})(window);
