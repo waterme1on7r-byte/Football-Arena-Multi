@@ -36,12 +36,13 @@ class NativeLayoutTest {
                 val paint = MainActivity::class.java.getDeclaredMethod("paintDpiStatus").apply { isAccessible = true }
                 paint.invoke(activity)
                 val button = field("dpiButton").get(activity) as Button
-                assertEquals(android.graphics.Color.rgb(67, 222, 143), button.currentTextColor)
+                fun dotColor(): Int = (button.text as android.text.Spanned).getSpans(0, 1, android.text.style.ForegroundColorSpan::class.java).single().foregroundColor
+                assertEquals(android.graphics.Color.rgb(67, 222, 143), dotColor())
                 MainActivity::class.java.getDeclaredMethod("pageFailed", WebView::class.java, String::class.java, String::class.java).apply { isAccessible = true }
                     .invoke(activity, page, "https://test.invalid/", "Connection reset")
-                assertEquals(android.graphics.Color.rgb(246, 196, 81), button.currentTextColor)
+                assertEquals(android.graphics.Color.rgb(246, 196, 81), dotColor())
                 val other = WebView(activity); loaded.add(other); paint.invoke(activity)
-                assertEquals("Another page must not turn the failed page green", android.graphics.Color.rgb(246, 196, 81), button.currentTextColor)
+                assertEquals("Another page must not turn the failed page green", android.graphics.Color.rgb(246, 196, 81), dotColor())
                 loaded.remove(other); other.destroy()
             }
         }

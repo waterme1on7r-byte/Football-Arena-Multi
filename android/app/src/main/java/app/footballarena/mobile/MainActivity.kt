@@ -50,6 +50,12 @@ class MainActivity : Activity() {
     private val errorLabels = mutableMapOf<WebView, TextView>()
     private var lastPageError = "None"
     private lateinit var dpiButton: Button
+    private lateinit var quickCount: TextView
+    private lateinit var quickButton: LinearLayout
+    private val brandTypeface by lazy {
+        if (android.os.Build.VERSION.SDK_INT >= 26) Typeface.Builder(assets, "fonts/big_shoulders_display.ttf").setFontVariationSettings("'wght' 900").build()
+        else Typeface.create(Typeface.createFromAsset(assets, "fonts/big_shoulders_display.ttf"), Typeface.BOLD)
+    }
     private val pages = linkedMapOf<String, WebView>()
     private val paneViews = linkedMapOf<String, LinearLayout>()
     private val mainButtons = mutableMapOf<String, Button>()
@@ -184,37 +190,53 @@ class MainActivity : Activity() {
             val bars = insets.getInsets(android.view.WindowInsets.Type.systemBars())
             view.setPadding(bars.left, bars.top, bars.right, bars.bottom); insets
         }
-        val wide = resources.configuration.screenWidthDp >= 1000
+        val wide = resources.configuration.screenWidthDp >= 900
         val toolbar = LinearLayout(this).apply {
-            gravity = Gravity.CENTER_VERTICAL; setPadding(dp(18), dp(12), dp(14), dp(12))
+            orientation = if (wide) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL; setPadding(dp(14), dp(10), dp(14), dp(12))
             background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TL_BR, intArrayOf(Color.rgb(38,33,24), bg, bg))
         }
         val brand = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, dp(16), 0) }
-        if (wide) brand.addView(ImageView(this).apply { setImageResource(app.footballarena.mobile.R.drawable.arena_mark); importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO }, LinearLayout.LayoutParams(dp(48), dp(48)))
-        title = TextView(this).apply { text = if (wide) "FOOTBALL ARENA" else "FOOTBALL\nARENA"; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(8), 0, 0, 0); setTextColor(gold); textSize = if (wide) 30f else 18f; typeface = Typeface.create("sans-serif-condensed", Typeface.BOLD) }
+        brand.addView(ImageView(this).apply { setImageResource(app.footballarena.mobile.R.drawable.arena_mark); importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO }, LinearLayout.LayoutParams(dp(if (wide) 40 else 32), dp(if (wide) 40 else 32)))
+        title = object : TextView(this) {
+            override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+                super.onSizeChanged(w,h,oldw,oldh)
+                paint.shader = android.graphics.LinearGradient(0f, 0f, w.toFloat(), 0f, intArrayOf(Color.rgb(255,227,154), gold, Color.WHITE), floatArrayOf(0f,.55f,1f), android.graphics.Shader.TileMode.CLAMP)
+            }
+        }.apply { tag = "user-content"; text = "Football Arena"; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(10), 0, 0, 0); setTextColor(gold); textSize = if (wide) 44f else 34f; typeface = brandTypeface; includeFontPadding = false; letterSpacing = .03f; setSingleLine(true) }
         brand.addView(title); toolbar.addView(brand)
         val tools = LinearLayout(this).apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL }
-        dpiButton = button("● DPI") { dpiQuickMenu(it) }
+        dpiButton = headerButton("● DPI") { dpiQuickMenu(it) }
         tools.addView(dpiButton)
         val segment = LinearLayout(this).apply { background = controlBackground(false); clipToOutline = true }
         listOf("Auto", "1", "2", "3", "4").forEachIndexed { n, label ->
-            val b = button(label, n == layoutCount) { setLayout(n) }.apply { layoutParams = LinearLayout.LayoutParams(dp(if (n == 0) 94 else 40), dp(42)); minWidth = 0; minimumWidth = 0; setSingleLine(true); setPadding(dp(6), 0, dp(6), 0) }
+            val b = headerButton(label, n == layoutCount) { setLayout(n) }.apply { layoutParams = LinearLayout.LayoutParams(dp(if (n == 0) 80 else 30), dp(if (leanback) 44 else 36)); setPadding(dp(6), 0, dp(6), 0) }
+            b.background = layoutBackground(n == layoutCount)
             layoutButtons.add(b); segment.addView(b)
         }
         tools.addView(segment)
-        tools.addView(button("Close all") { pages.keys.toList().forEach { selectedKey = it; closePane() } })
-        tools.addView(button("⚙ Settings") { settingsDialog() })
-        tools.addView(button("Add site", true) { addSite() })
-        toolbar.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; isFillViewport = true; addView(tools) }, LinearLayout.LayoutParams(0, -2, 1f))
+        tools.addView(headerButton("Close all") { pages.keys.toList().forEach { selectedKey = it; closePane() } })
+        tools.addView(headerButton("⚙ Settings") { settingsDialog() })
+        tools.addView(headerButton("Add site", true) { addSite() })
+        toolbar.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; isFillViewport = true; addView(tools) }, if (wide) LinearLayout.LayoutParams(0, -2, 1f) else LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
         root.addView(toolbar)
         root.addView(View(this).apply { background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(gold, Color.rgb(34,48,66), bg)) }, LinearLayout.LayoutParams(-1, dp(1)))
-        val siteRow = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(14), dp(10), dp(14), dp(10)) }
+        val siteRow = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(14), dp(8), dp(14), dp(8)) }
         val scroll = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; isFocusable = false }
-        listBar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(dp(8), dp(4), dp(8), dp(4)) }
+        listBar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(2), dp(8), dp(2)) }
         scroll.addView(listBar)
-        siteRow.addView(scroll, LinearLayout.LayoutParams(0, dp(if (leanback) 60 else 50), 1f))
-        siteRow.addView(View(this).apply { setBackgroundColor(Color.rgb(34,48,66)) }, LinearLayout.LayoutParams(dp(1), dp(26)).apply { marginStart = dp(12); marginEnd = dp(12) })
-        siteRow.addView(button("ϟ Quick access", true) { quickAccess(it) })
+        siteRow.addView(scroll, LinearLayout.LayoutParams(0, dp(if (leanback) 52 else 44), 1f))
+        quickButton = LinearLayout(this).apply {
+            gravity = Gravity.CENTER; setPadding(dp(10), 0, dp(10), 0); background = tabBackground(true, false)
+            isClickable = true; isFocusable = true; setOnClickListener { quickAccess(it) }
+        }
+        fun quickLabel(value: String, size: Float) = TextView(this).apply { text = value; setTextColor(Color.rgb(255,227,154)); textSize = size; gravity = Gravity.CENTER; typeface = Typeface.DEFAULT_BOLD }
+        quickButton.addView(quickLabel("ϟ", 18f), LinearLayout.LayoutParams(dp(18), -1))
+        quickButton.addView(quickLabel("Quick access", 12f).apply { setPadding(dp(5), 0, dp(6), 0) })
+        quickCount = TextView(this).apply { textSize = 11f; setTextColor(bg); gravity = Gravity.CENTER; typeface = Typeface.DEFAULT_BOLD; minWidth = dp(18); background = android.graphics.drawable.GradientDrawable().apply { setColor(gold); cornerRadius = dp(12).toFloat() }; setPadding(dp(4), 0, dp(4), 0) }
+        quickButton.addView(quickCount, LinearLayout.LayoutParams(-2, dp(18)))
+        quickButton.addView(quickLabel("⌄", 16f).apply { setPadding(dp(6), 0, 0, 0) })
+        siteRow.addView(quickButton, LinearLayout.LayoutParams(-2, dp(if (leanback) 44 else 36)).apply { marginStart = dp(10) })
         root.addView(siteRow)
         browser = WebView(this).apply {
             setBackgroundColor(Color.BLACK)
@@ -342,14 +364,26 @@ class MainActivity : Activity() {
         listBar.removeAllViews()
         sites.filter { !it.quick }.forEach { s ->
             val isOpen = pages.containsKey(s.id)
-            val b = button((if (isOpen) "●  " else "") + s.name) { openSite(s) }
-            b.tag = "user-content"
-            b.setTextColor(if (isOpen) gold else text)
-            b.background = tabBackground(isOpen, s.id == selectedKey)
-            b.contentDescription = "${s.name}, ${if (isOpen) "open" else "closed"}${if (s.id == selectedKey) ", focused" else ""}"
-            b.isSelected = isOpen
-            b.setOnLongClickListener { editSite(s, b); true }
-            listBar.addView(b)
+            val chip = LinearLayout(this).apply {
+                tag = "user-content"; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(4), 0, dp(2), 0)
+                background = tabBackground(isOpen, s.id == selectedKey); setAddStatesFromChildren(true); isSelected = isOpen
+            }
+            val name = headerButton(s.name) { openSite(s) }.apply {
+                setTextColor(if (isOpen) gold else text); typeface = Typeface.DEFAULT_BOLD; maxWidth = dp(180)
+                setBackgroundColor(Color.TRANSPARENT); setPadding(dp(2), 0, dp(6), 0)
+                setCompoundDrawablesWithIntrinsicBounds(SiteInitialBadge(s.name, dp(20)), null, null, null); compoundDrawablePadding = dp(7)
+                contentDescription = "${s.name}, ${if (isOpen) "open" else "closed"}${if (s.id == selectedKey) ", focused" else ""}"
+                setOnLongClickListener { editSite(s, chip); true }
+            }
+            chip.addView(name, LinearLayout.LayoutParams(-2, dp(if (leanback) 44 else 36)))
+            chip.addView(headerButton("⋮") { editSite(s, it) }.apply {
+                contentDescription = AppStrings.t("Options") + " · " + s.name; textSize = 18f; setTextColor(Color.rgb(134,150,168)); setBackgroundColor(Color.TRANSPARENT); setPadding(0,0,0,0)
+            }, LinearLayout.LayoutParams(dp(22), dp(if (leanback) 44 else 36)))
+            listBar.addView(chip, LinearLayout.LayoutParams(-2, dp(if (leanback) 46 else 38)).apply { marginEnd = dp(7) })
+        }
+        if (::quickCount.isInitialized) {
+            val count = sites.count { it.quick }; quickCount.text = count.toString()
+            quickButton.contentDescription = AppStrings.t("Quick access") + " · " + count
         }
         if (::browser.isInitialized) paintDpiStatus()
     }
@@ -475,7 +509,7 @@ class MainActivity : Activity() {
         applyAudio()
     }
 
-    private fun setLayout(n: Int) { mainPane = ""; layoutCount = n; prefs.edit().putInt("layout", n).apply(); layoutButtons.forEachIndexed { i, b -> b.background = controlBackground(i == n); b.setTextColor(if (i == n) bg else text) }; renderPages() }
+    private fun setLayout(n: Int) { mainPane = ""; layoutCount = n; prefs.edit().putInt("layout", n).apply(); layoutButtons.forEachIndexed { i, b -> b.background = layoutBackground(i == n); b.setTextColor(if (i == n) bg else text) }; renderPages() }
     private fun openUrl(url: String) {
         if (!(url.startsWith("https://") || url.startsWith("http://"))) return
         selected = url
@@ -508,6 +542,15 @@ class MainActivity : Activity() {
         if (reload) pages.values.filter { it !in queued }.forEach { it.reload() }
     }
 
+    private fun headerButton(label: String, primary: Boolean = false, action: (View) -> Unit) = button(label, primary, action).apply {
+        textSize = if (leanback) 15f else 12f
+        layoutParams = LinearLayout.LayoutParams(-2, dp(if (leanback) 44 else 36)).apply { marginStart = dp(3); marginEnd = dp(3) }
+    }
+    private fun layoutBackground(active: Boolean) = android.graphics.drawable.StateListDrawable().apply {
+        addState(intArrayOf(android.R.attr.state_focused), controlBackground(active))
+        addState(intArrayOf(android.R.attr.state_pressed), android.graphics.drawable.ColorDrawable(if (active) gold else Color.rgb(41,49,61)))
+        addState(intArrayOf(), android.graphics.drawable.ColorDrawable(if (active) gold else Color.TRANSPARENT))
+    }
     private fun button(label: String, primary: Boolean = false, action: (View) -> Unit): Button {
         val icon = mapOf("‹" to "back", "›" to "forward", "×" to "close", "↻" to "refresh", "▣" to "main", "♫" to "sound", "⏻" to "power")[label]
         return Button(this).apply {
@@ -685,9 +728,10 @@ class MainActivity : Activity() {
     }
     private fun paintDpiStatus() {
         val bypassPageLoaded = ::browser.isInitialized && browser in bypassPages && !loadErrors.containsKey(browser) && browser !in safetyWarnings
-        dpiButton.text = "● DPI"
+        val indicator = when (dpiState) { "Automatic", "Always bypass" -> if (bypassPageLoaded) Color.rgb(67,222,143) else gold; "Failed" -> Color.rgb(255,115,115); "Starting" -> gold; else -> Color.rgb(134,150,168) }
+        dpiButton.text = android.text.SpannableString("● DPI").apply { setSpan(android.text.style.ForegroundColorSpan(indicator), 0, 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE) }
         dpiButton.contentDescription = "DPI · $dpiState"
-        dpiButton.setTextColor(when (dpiState) { "Automatic", "Always bypass" -> if (bypassPageLoaded) Color.rgb(67,222,143) else gold; "Failed" -> Color.rgb(255,115,115); "Starting" -> gold; else -> Color.rgb(134,150,168) })
+        dpiButton.setTextColor(Color.rgb(134,150,168))
         dpiButton.contentDescription = AppStrings.t("DPI · $dpiState") + " · " + AppStrings.t(if (bypassPageLoaded) "Page loaded with bypass" else "Bypass ready; access not verified")
     }
     private fun dpiMenu() {

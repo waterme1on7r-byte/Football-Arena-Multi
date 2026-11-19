@@ -1,4 +1,14 @@
-Android 1.8.18 preview
+Android 1.8.19 preview
+
+- Match the Android header to the desktop reference: bundled Big Shoulders Display title font, title-case gradient branding and compact right-aligned controls.
+- Add colored initial badges and separate three-dot menus to every site chip.
+- Add the gold outlined Quick Access pill with a live saved-site count and dropdown indicator.
+- Keep the colored DPI dot while using the reference's muted DPI label.
+- Responsive toolbar uses a second line on narrow screens; Android TV retains larger controls.
+
+Networking and page lifecycle behavior are unchanged in this header update.
+
+Previous compatibility improvements retained:
 
 - Extra TV uses a desktop browser identity from its first request, so its desktop address and navigation select the same device profile.
 - Keep Extra TV mobile-host links on its configured desktop host without losing paths, queries or fragments.
