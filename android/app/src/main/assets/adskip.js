@@ -113,6 +113,9 @@
     if (siteId() === 'mahsunsports' || /(^|\.)mahsunsports\d*\./i.test(location.hostname)) {
       document.querySelectorAll('#openWheelBtn').forEach(hidePromotion);
     }
+    if (siteId() === 'trgoals' || /(^|\.)taraftarium\d*\./i.test(location.hostname)) {
+      document.querySelectorAll('.pageskin-wrapper,.pageskin-mobile-wrapper').forEach(hidePromotion);
+    }
     if (sportsLayout()) {
       document.querySelectorAll('.background-link,.ads-container,.ads_single_font,.match-flow-ad,#ad-hellobar,#ad-top-banner,#ad-player-top,#ad-player-bottom,#ad-background').forEach(hidePromotion);
       document.querySelectorAll('iframe[src]').forEach(frame => {

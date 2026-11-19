@@ -1,4 +1,6 @@
-Android 1.8.35 preview
+Android 1.8.36 preview
+
+- Remove TRGOALS' observed first-party mobile and desktop page-skin promotions, including the full-width image above the player.
 
 - Support Patron's press-event skip control after its countdown and remove its sponsored player poster while retaining playback controls.
 - Report same-origin fallback skip actions directly to the owning page.

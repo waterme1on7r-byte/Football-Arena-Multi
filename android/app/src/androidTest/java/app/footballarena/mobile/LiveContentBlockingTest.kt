@@ -116,6 +116,6 @@ class LiveContentBlockingTest {
     @Test(timeout=120000) fun mahsunFirstPartyBannersAndCustomPreroll() = checkSite("mahsunsports","#customIframe",".banner-container",true)
     @Test(timeout=120000) fun patronPromotionalBannersPreservePlayer() = checkSite("patronspor","iframe#player","#ustBannerLink,#altBannerLink,#footerBannerLink,.hellobar,.background-link",true)
     @Test(timeout=120000) fun ardaAdZonesPreservePlayer() = checkSite("ardaspor","#playerFrame","[id^='zone_'],a[href*='1xbet.com']")
-    @Test(timeout=120000) fun trgoalsBannersPreservePlayer() = checkSite("trgoals","#customIframe",".ads-container,.ads_single_font,.match-flow-ad")
+    @Test(timeout=120000) fun trgoalsBannersPreservePlayer() = checkSite("trgoals","#customIframe",".ads-container,.ads_single_font,.match-flow-ad,.pageskin-wrapper,.pageskin-mobile-wrapper")
     @Test(timeout=120000) fun zeusBannersPreservePlayer() = checkSite("zeustv","#main-player-container","#ad-hellobar,#ad-top-banner,#ad-player-top,#ad-player-bottom,#ad-background,#page-skin-iframe")
 }
