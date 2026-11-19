@@ -1,4 +1,4 @@
-Android 1.8.24 preview
+Android 1.8.25 preview
 
 - Open user-initiated new-window links as yellow temporary tabs with a + save action. Saving preserves the existing page and player.
 - Expand advertising host/path rules to match desktop coverage. Leave player and media CDN URLs alone.

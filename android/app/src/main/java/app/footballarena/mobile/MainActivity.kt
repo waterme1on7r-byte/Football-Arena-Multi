@@ -870,7 +870,7 @@ class MainActivity : Activity() {
         val body = LinearLayout(this)
         shell.addView(body, LinearLayout.LayoutParams(-1, 0, 1f))
         val tabs = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(8), dp(12), dp(8), dp(8)); setBackgroundColor(bg); tag = "settings-sidebar" }
-        body.addView(ScrollView(this).apply { addView(tabs) }, LinearLayout.LayoutParams(dp(if (resources.configuration.screenWidthDp < 600) 112 else 176), -1))
+        body.addView(ScrollView(this).apply { setBackgroundColor(bg); isFillViewport = true; addView(tabs) }, LinearLayout.LayoutParams(dp(if (resources.configuration.screenWidthDp < 600) 112 else 176), -1))
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(16), dp(20), dp(16)) }
         val scroll = ScrollView(this).apply { addView(content); isFillViewport = true }
         body.addView(scroll, LinearLayout.LayoutParams(0, -1, 1f))
@@ -886,7 +886,8 @@ class MainActivity : Activity() {
             row.addView(labels, LinearLayout.LayoutParams(0, -2, 1f))
             if (key != null) row.addView(Switch(this).apply {
                 contentDescription = label; isChecked = prefs.getBoolean(key, default)
-                thumbTintList = android.content.res.ColorStateList.valueOf(gold)
+                thumbTintList = android.content.res.ColorStateList(arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()), intArrayOf(gold, Color.rgb(175,186,199)))
+                trackTintList = android.content.res.ColorStateList(arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()), intArrayOf(Color.rgb(126,100,44), Color.rgb(57,68,82)))
                 setOnCheckedChangeListener { _, on ->
                     prefs.edit().putBoolean(key, on).apply()
                     if (key == "dpi") updateDpi(true)
