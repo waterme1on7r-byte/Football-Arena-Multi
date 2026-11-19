@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** App-local CONNECT tunnel. TLS stays encrypted; no certificates or interception. */
-class DpiProxy(private val fragmentSize: Int, private val dns: SecureDns = SecureDns(), private val tlsRecords: Boolean = true, private val routing: AutoRouting? = null, private val retryHandshake: Boolean = true, private val addressConnect: ((Socket, InetAddress) -> Unit)? = null, private val connector: ((String) -> Socket)? = null) {
+class DpiProxy(private val fragmentSize: Int, private val dns: SecureDns = SecureDns(), private val tlsRecords: Boolean = true, private val routing: AutoRouting? = null, private val retryHandshake: Boolean = true, private val addressConnect: ((Socket, InetAddress) -> Unit)? = null, private val maxConnections: Int = 64, private val connector: ((String) -> Socket)? = null) {
     private class HostStats {
         val connections = AtomicInteger(); val sent = AtomicInteger(); val replies = AtomicInteger(); val bytes = AtomicLong(); val failures = AtomicInteger()
         @Volatile var error = "None"
@@ -39,7 +39,7 @@ class DpiProxy(private val fragmentSize: Int, private val dns: SecureDns = Secur
     }
     private val pool = Executors.newCachedThreadPool()
     private val sockets = ConcurrentHashMap.newKeySet<Socket>()
-    private val slots = Semaphore(32)
+    private val slots = Semaphore(maxConnections)
     @Volatile private var listener: ServerSocket? = null
     @Volatile var lastError: String? = null
         private set
@@ -53,14 +53,15 @@ class DpiProxy(private val fragmentSize: Int, private val dns: SecureDns = Secur
         private set
 
     fun start(): Int {
-        val server = ServerSocket(0, 32, InetAddress.getByName("127.0.0.1"))
+        val server = ServerSocket(0, 128, InetAddress.getByName("127.0.0.1"))
         listener = server
         pool.execute {
             while (!server.isClosed) {
                 try {
                     val client = server.accept()
-                    if (!slots.tryAcquire()) { client.close(); continue }
                     sockets.add(client)
+                    // Backpressure instead of dropping CSS/script connections when several panes load.
+                    slots.acquire()
                     pool.execute { try { tunnel(client) } catch (e: Exception) { if (!client.isClosed && !server.isClosed) recordFailure(client, "Tunnel: ${e.message}") } finally { clientHosts.remove(client); sockets.remove(client); client.close(); slots.release() } }
                 } catch (_: Exception) { break }
             }
@@ -101,7 +102,7 @@ class DpiProxy(private val fragmentSize: Int, private val dns: SecureDns = Secur
             val record = ByteArray(5 + size); head.copyInto(record)
             read = 5
             while (read < record.size) { val n = inputTls.read(record, read, record.size - read); if (n < 0) return; read += n }
-        var bypass = routing?.usesBypass(host) ?: true
+        var bypass = routing?.let { it.usesBypass(host) || !it.isRegistered(host) } ?: true
         var records = tlsRecords
         var compatibilityTried = false
         var remote: Socket? = null
@@ -110,10 +111,10 @@ class DpiProxy(private val fragmentSize: Int, private val dns: SecureDns = Secur
         while (true) {
             var attempt: Socket? = null
             try {
-                attempt = connector?.invoke(host) ?: connectHost(host, bypass)
+                attempt = connector?.invoke(host) ?: connectHost(host)
                 sockets.add(attempt); attempt.tcpNoDelay = true; attempt.soTimeout = 5000
                 val output = attempt.getOutputStream()
-                stats.route = if (!bypass) "Direct DNS, unchanged TLS" else if (records) "Encrypted DNS + TLS records" else "Encrypted DNS + TCP split"
+                stats.route = if (!bypass) "Encrypted DNS, unchanged TLS" else if (records) "Encrypted DNS + TLS records" else "Encrypted DNS + TCP split"
                 noteAttempt(stats, "${stats.route} → ${attempt.inetAddress.hostAddress}")
                 if (!bypass) { output.write(record); output.flush() }
                 var offset = if (!bypass) record.size else if (records) 5 else 0
@@ -179,11 +180,11 @@ class DpiProxy(private val fragmentSize: Int, private val dns: SecureDns = Secur
         } finally { sockets.remove(upstreamSocket); upstreamSocket.close() }
     }
 
-    private fun connectHost(host: String, bypass: Boolean): Socket {
+    private fun connectHost(host: String): Socket {
         var error: Exception? = null
-        val resolvers = if (!bypass) listOf(false) else if (host in alternativeDns) listOf(true, false) else listOf(false, true)
+        val resolvers = if (host in alternativeDns) listOf(true, false) else listOf(false, true)
         for (alternative in resolvers) {
-        val addresses = try { (if (bypass) dns.resolve(host, alternative) else InetAddress.getAllByName(host).toList()).sortedBy { it is java.net.Inet6Address } }
+        val addresses = try { dns.resolve(host, alternative).sortedBy { it is java.net.Inet6Address } }
             catch (e: Exception) { error = e; continue }
         hosts[host]?.addresses = addresses.joinToString { it.hostAddress ?: "?" }
         // Never let an untrusted page use the tunnel to reach local network services.
@@ -192,7 +193,7 @@ class DpiProxy(private val fragmentSize: Int, private val dns: SecureDns = Secur
             val socket = Socket(); sockets.add(socket)
             try {
                 if (addressConnect != null) addressConnect.invoke(socket, address) else socket.connect(InetSocketAddress(address, 443), 3000)
-                if (bypass && alternative) alternativeDns.add(host)
+                if (alternative) alternativeDns.add(host)
                 return socket
             }
             catch (e: Exception) { error = e; socket.close(); sockets.remove(socket) }

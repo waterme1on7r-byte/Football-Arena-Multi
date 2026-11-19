@@ -51,6 +51,8 @@ class MainActivity : Activity() {
     private var lastPageError = "None"
     private lateinit var dpiButton: Button
     private val pages = linkedMapOf<String, WebView>()
+    private val paneViews = linkedMapOf<String, LinearLayout>()
+    private val mainButtons = mutableMapOf<String, Button>()
     private val pageSites = mutableMapOf<String, Site>()
     private val automaticRoutes = AutoRouting()
     private val viewSites = java.util.concurrent.ConcurrentHashMap<WebView, String>()
@@ -348,7 +350,8 @@ class MainActivity : Activity() {
         selectedKey = site.id
         val existing = pages[site.id]
         if (existing != null) {
-            closePane()
+            browser = existing
+            renderSiteBar(); renderPages()
             return
         }
         if (!pages.containsKey(site.id)) {
@@ -379,11 +382,18 @@ class MainActivity : Activity() {
     private fun renderPages() {
         if (!::stage.isInitialized) return
         val count = if (layoutCount == 0) 4 else layoutCount
-        val open = (listOf(selectedKey) + pages.keys.filter { it != selectedKey }).filter { it in pages }.take(count)
+        val open = pages.keys.take(count).toMutableList()
+        if (selectedKey in pages && selectedKey !in open) open[open.indexOfLast { it != mainPane }.coerceAtLeast(0)] = selectedKey
+        if (count > 1 && mainPane in pages && mainPane !in open) open[open.indexOfLast { it != selectedKey }.coerceAtLeast(0)] = mainPane
         val prominent = mainPane in open && open.size > 1 && resources.configuration.screenWidthDp >= 600
         val cols = if (open.size > 1 && resources.configuration.screenWidthDp >= 600) 2 else 1
-        pages.values.forEach { (it.parent as? android.view.ViewGroup)?.removeView(it) }
-        stage.removeAllViews(); stage.rowCount = GridLayout.UNDEFINED; stage.columnCount = cols; stage.rowCount = if (prominent) open.size - 1 else (open.size + cols - 1) / cols
+        // Keep both the WebView and its parent attached. Reparenting disrupts embedded players.
+        paneViews.keys.filter { it !in pages }.toList().forEach { key -> stage.removeView(paneViews.remove(key)); mainButtons.remove(key) }
+        stage.rowCount = GridLayout.UNDEFINED; stage.columnCount = GridLayout.UNDEFINED
+        paneViews.filterKeys { it !in open }.values.forEach { pane ->
+            pane.visibility = View.GONE
+            pane.layoutParams = GridLayout.LayoutParams(GridLayout.spec(0), GridLayout.spec(0)).apply { width = 0; height = 0 }
+        }
         val ordered = if (prominent) listOf(mainPane) + open.filter { it != mainPane } else open
         ordered.forEachIndexed { i, key ->
             val page = pages[key] ?: return@forEachIndexed
@@ -393,18 +403,20 @@ class MainActivity : Activity() {
             val lp = GridLayout.LayoutParams(GridLayout.spec(row, span, GridLayout.FILL, 1f), GridLayout.spec(col, 1, GridLayout.FILL, if (prominent && i == 0) 2f else 1f)).apply {
                 width = 0; height = 0; setMargins(dp(4), dp(4), dp(4), dp(4))
             }
-            val pane = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; background = controlBackground(false); clipToOutline = true; setPadding(dp(1), dp(1), dp(1), dp(1)) }
+            val pane = paneViews.getOrPut(key) {
+            val container = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; background = controlBackground(false); clipToOutline = true; setPadding(dp(1), dp(1), dp(1), dp(1)) }
             val controls = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(6), dp(4), dp(6), dp(2)) }
             controls.addView(TextView(this).apply {
                 tag = "user-content"; text = pageSites[key]?.name ?: "Page"; setTextColor(gold); typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(12), 0, dp(12), 0); maxWidth = dp(160); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
                 isFocusable = true; setOnClickListener { selectedKey = key; browser = page; renderSiteBar(); applyAudio() }
             }, LinearLayout.LayoutParams(0, dp(42), 1f))
-            controls.addView(button("▣", true) { mainPane = if (mainPane == key) "" else key; renderPages() }.apply { contentDescription = "Toggle main pane"; isSelected = mainPane == key })
+            val mainButton = button("▣", true) { mainPane = if (mainPane == key) "" else key; renderPages() }.apply { contentDescription = "Toggle main pane" }
+            mainButtons[key] = mainButton; controls.addView(mainButton)
             controls.addView(button("♫") { selectedKey = key; browser = page; volumeDialog(key) })
             controls.addView(button("↻") { page.reload() })
             controls.addView(button("×") { selectedKey = key; closePane() })
-            pane.addView(controls)
+            container.addView(controls)
             val navigation = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(6), dp(2), dp(6), dp(6)) }
             val back = button("‹") { if (page.canGoBack()) page.goBack() }.apply { contentDescription = "Back"; isEnabled = page.canGoBack() }
             val forward = button("›") { if (page.canGoForward()) page.goForward() }.apply { contentDescription = "Forward"; isEnabled = page.canGoForward() }
@@ -424,7 +436,7 @@ class MainActivity : Activity() {
             }
             addresses[page] = address
             navigation.addView(address, LinearLayout.LayoutParams(0, dp(40), 1f).apply { marginStart = dp(4) })
-            pane.addView(navigation)
+            container.addView(navigation)
             val viewport = FrameLayout(this)
             viewport.addView(page, FrameLayout.LayoutParams(-1, -1))
             val errorLabel = TextView(this).apply {
@@ -435,14 +447,18 @@ class MainActivity : Activity() {
             }
             errorLabels[page] = errorLabel
             viewport.addView(errorLabel, FrameLayout.LayoutParams(-1, -1))
-            pane.addView(viewport, LinearLayout.LayoutParams(-1, 0, 1f))
-            stage.addView(pane, lp)
-            page.onResume()
+            container.addView(viewport, LinearLayout.LayoutParams(-1, 0, 1f))
             page.setOnFocusChangeListener { _, focused -> if (focused) { selectedKey = key; browser = page; renderSiteBar(); applyAudio() } }
             page.visibility = View.VISIBLE
             page.alpha = 1f
+            container
+            }
+            mainButtons[key]?.isSelected = mainPane == key
+            pane.visibility = View.VISIBLE
+            if (pane.parent == null) stage.addView(pane, lp) else pane.layoutParams = lp
         }
-        pages.filterKeys { it !in open }.values.forEach { it.onPause() }
+        stage.columnCount = cols
+        stage.rowCount = maxOf(1, if (prominent) open.size - 1 else (open.size + cols - 1) / cols)
         applyAudio()
     }
 
@@ -753,8 +769,8 @@ class MainActivity : Activity() {
                     row("Quick access", "Open the sites in your quick-access list.", action = { quickAccess() })
                 }
                 3 -> {
-                    heading("Network", "Automatic uses a direct connection first. On a connection failure it retries with encrypted DNS and DPI bypass for this site. Other apps are unchanged.")
-                    row("Connection routing", "Automatic tries direct first and retries network failures with bypass. Learned routes expire after four hours or when the site address changes.", action = { routingModeDialog() })
+                    heading("Network", "Automatic uses encrypted DNS for HTTPS pages and resources, and adapts TLS fragmentation when needed.")
+                    row("Connection routing", "Learned routes expire after four hours or when the site address changes.", action = { routingModeDialog() })
                     row("DPI options & diagnostics", "See routed connections, handshakes, errors, and fragment options.", action = { dpiMenu() })
                     row("Ad blocking", "Block known advertising hosts.", "adblock", true)
                     row("Auto-skip", "Attempt to skip supported video ads.", "autoskip", true)
@@ -795,14 +811,14 @@ class MainActivity : Activity() {
     }
     private fun applyAudio() {
         pages.forEach { (key, page) ->
-            val muted = prefs.getBoolean("mute-$key", false) || (prefs.getBoolean("focusAudio", false) && key != selectedKey) || page.parent == null
+            val muted = prefs.getBoolean("mute-$key", false) || (prefs.getBoolean("focusAudio", false) && key != selectedKey)
             val volume = prefs.getInt("volume-$key", 100).coerceIn(0, 100) / 100.0
             page.evaluateJavascript("(()=>{window.__faVolume=$volume;if(!window.__faVolumeTimer){window.__faVolumeTimer=true;setInterval(()=>document.querySelectorAll('video,audio').forEach(e=>e.volume=window.__faVolume),1000)}document.querySelectorAll('video,audio').forEach(e=>e.volume=window.__faVolume)})()", null)
             page.evaluateJavascript("(()=>{window.__faMuted=$muted;if(!window.__faSound){window.__faSound=true;setInterval(()=>document.querySelectorAll('video,audio').forEach(e=>e.muted=window.__faMuted),1000)}document.querySelectorAll('video,audio').forEach(e=>e.muted=window.__faMuted)})()", null)
         }
     }
     override fun onPause() { super.onPause(); pages.values.forEach { it.onPause() } }
-    override fun onResume() { super.onResume(); if (::stage.isInitialized) renderPages() }
+    override fun onResume() { super.onResume(); pages.values.forEach { it.onResume() } }
     private fun videoClient() = object : WebChromeClient() {
         override fun onShowCustomView(view: View, callback: CustomViewCallback) {
             if (fullVideo != null) { callback.onCustomViewHidden(); return }

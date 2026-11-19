@@ -26,7 +26,10 @@ object AppStrings {
             "Bypass ready; access not verified" to "Engel aşma hazır; seçili sayfaya erişim doğrulanmadı",
             "Attempts" to "Bağlantı denemeleri",
             "Encrypted DNS + TLS records" to "Şifreli DNS + TLS kayıt parçalama",
-            "Encrypted DNS + TCP split" to "Şifreli DNS + TCP parçalama"
+            "Encrypted DNS + TCP split" to "Şifreli DNS + TCP parçalama",
+            "Encrypted DNS, unchanged TLS" to "Şifreli DNS, değiştirilmemiş TLS",
+            "Automatic uses encrypted DNS for HTTPS pages and resources, and adapts TLS fragmentation when needed." to "Otomatik mod, HTTPS sayfaları ve kaynakları için şifreli DNS kullanır; gerektiğinde TLS parçalamayı uyarlar.",
+            "Learned routes expire after four hours or when the site address changes." to "Öğrenilen yollar dört saat sonra veya site adresi değiştiğinde sıfırlanır."
         )
         templates = catalog.filterKeys { it.contains("{0}") }.map { (key, value) -> Regex("^" + key.split(Regex("\\{\\d+\\}")).joinToString("(.+?)") { Regex.escape(it) } + "$") to value }
         pattern = Regex(catalog.keys.filter { !it.contains("{0}") }.sortedByDescending { it.length }.joinToString("|") { "(?<![A-Za-z])" + Regex.escape(it) + "(?![A-Za-z])" })

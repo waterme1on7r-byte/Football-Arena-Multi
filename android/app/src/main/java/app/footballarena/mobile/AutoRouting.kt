@@ -18,6 +18,7 @@ class AutoRouting(private val now: () -> Long = System::currentTimeMillis) {
         URI(url).host?.let { registerHost(id, it) }
     }
     fun registerHost(id: String, host: String) { if (sites.containsKey(id)) owners[host.lowercase()] = id }
+    fun isRegistered(host: String): Boolean = owners.containsKey(host.lowercase())
     fun usesBypass(host: String): Boolean = owners[host.lowercase()]?.let { sites[it] }?.let { it.bypassUntil > now() } ?: false
     @Synchronized fun retryWithBypass(host: String): Boolean {
         val route = owners[host.lowercase()]?.let { sites[it] } ?: return false

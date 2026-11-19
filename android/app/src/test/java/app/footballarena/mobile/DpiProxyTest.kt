@@ -8,10 +8,31 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 class DpiProxyTest {
-    private fun runTunnel(reply: Boolean, records: Boolean = true, automaticDirect: Boolean = false, alternateDns: Boolean = false) {
+    @Test fun saturatedProxyQueuesConnectionsInsteadOfResettingResources() {
+        val proxy = DpiProxy(8, maxConnections = 1)
+        val port = proxy.start()
+        fun connect() = Socket("127.0.0.1", port).apply { soTimeout = 3000; getOutputStream().write("CONNECT test.example:443 HTTP/1.1\r\n\r\n".toByteArray()) }
+        fun readHeader(socket: Socket): String {
+            val result = StringBuilder()
+            while (!result.endsWith("\r\n\r\n")) { val b = socket.getInputStream().read(); assertTrue("Proxy must not reset queued resources", b >= 0); result.append(b.toChar()) }
+            return result.toString()
+        }
+        try {
+            connect().use { first ->
+                assertTrue(readHeader(first).startsWith("HTTP/1.1 200"))
+                connect().use { second ->
+                    second.soTimeout = 200
+                    try { second.getInputStream().read(); fail("Second connection must wait for capacity") } catch (_: java.net.SocketTimeoutException) { }
+                    first.close(); second.soTimeout = 3000
+                    assertTrue(readHeader(second).startsWith("HTTP/1.1 200"))
+                }
+            }
+        } finally { proxy.stop() }
+    }
+    private fun runTunnel(reply: Boolean, records: Boolean = true, automaticDirect: Boolean = false, alternateDns: Boolean = false, unregisteredResource: Boolean = false) {
         val server = ServerSocket(0)
         val worker = Executors.newSingleThreadExecutor()
-        val routes = if (automaticDirect) AutoRouting().apply { registerSite("test", "https://test.example/") } else null
+        val routes = if (automaticDirect || unregisteredResource) AutoRouting().apply { registerSite("test", if (unregisteredResource) "https://main.example/" else "https://test.example/") } else null
         val attempted = mutableListOf<String>()
         val dns = SecureDns { url ->
             val ip = if (url.startsWith("https://dns.google/")) "104.21.82.180" else "172.67.179.52"
@@ -72,6 +93,8 @@ class DpiProxyTest {
     @Test fun compatibilityModePreservesOriginalTlsRecord() { runTunnel(true, false) }
     @Test fun automaticDirectDoesNotFragmentClientHandshake() { runTunnel(true, false, true) }
     @Test fun refusedResolverAddressesTryAnIndependentEncryptedResolver() { runTunnel(true, alternateDns = true) }
+    @Test fun automaticUnchangedTlsStillUsesEncryptedDnsForResources() { runTunnel(true, records = false, automaticDirect = true, alternateDns = true) }
+    @Test fun unregisteredResourceHostsUseProtectedTls() { runTunnel(true, unregisteredResource = true) }
 
     @Test fun automaticRetriesResetBeforeServerHelloInsideTheSameTunnel() { retryAfterBadFirstReply(null) }
     @Test fun plaintextBlockPageTriggersBypassInsteadOfTlsSuccess() { retryAfterBadFirstReply("HTTP/1.1 451 Blocked\r\n\r\n".toByteArray()) }

@@ -61,4 +61,4 @@ jobs:
           apk="Football-Arena-Android-$version.apk"
           cp android/app/build/outputs/apk/debug/app-debug.apk "$apk"
           zip -r android-ui-checks.zip ui-check
-          gh release create "$RELEASE_TAG" "$apk" android-ui-checks.zip --prerelease --latest=false --title "Android $version preview" --notes "Android-only: compact pane controls, responsive address bars, content-sized dark/gold dialogs, flag language picker, and TLS handshake fallback. Desktop releases are unchanged."
+          gh release create "$RELEASE_TAG" "$apk" android-ui-checks.zip --prerelease --latest=false --title "Android $version preview" --notes-file android/RELEASE-NOTES.md
