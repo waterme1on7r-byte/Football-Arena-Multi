@@ -15,11 +15,12 @@ import java.util.concurrent.TimeUnit
 @RunWith(AndroidJUnit4::class)
 class PaneLifecycleTest {
     private class RecordingWebView(context: Context) : WebView(context) {
+        var blockNavigations = false
         var detached = 0; var paused = 0; var reloads = 0; var navigations = 0
         override fun onDetachedFromWindow() { detached++; super.onDetachedFromWindow() }
         override fun onPause() { paused++; super.onPause() }
         override fun reload() { reloads++; super.reload() }
-        override fun loadUrl(url: String) { navigations++; super.loadUrl(url) }
+        override fun loadUrl(url: String) { navigations++; if (!blockNavigations) super.loadUrl(url) }
     }
     private fun field(name: String) = MainActivity::class.java.getDeclaredField(name).apply { isAccessible = true }
     private fun call(activity: MainActivity, name: String) = MainActivity::class.java.getDeclaredMethod(name).apply { isAccessible = true }.invoke(activity)
@@ -27,6 +28,25 @@ class PaneLifecycleTest {
         val ready = CountDownLatch(1); var value = ""
         scenario.onActivity { page.evaluateJavascript(source) { value = it; ready.countDown() } }
         assertTrue(ready.await(10, TimeUnit.SECONDS)); return value
+    }
+    @Test fun firstNavigationWaitsForProxyAndIsNotLoadedTwice() {
+        InstrumentationRegistry.getInstrumentation().targetContext.getSharedPreferences("football-arena", 0).edit().clear()
+            .putBoolean("languageChosen", true).putBoolean("restore", false).putString("dpiMode", "off").commit()
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                val page = RecordingWebView(activity).apply { blockNavigations = true }
+                @Suppress("UNCHECKED_CAST") val pages = field("pages").get(activity) as MutableMap<String, WebView>
+                pages["queued"] = page
+                field("routingReady").setBoolean(activity, false)
+                MainActivity::class.java.getDeclaredMethod("loadPage", WebView::class.java, String::class.java).apply { isAccessible = true }.invoke(activity, page, "https://fixture.invalid/")
+                assertEquals("No page request before routing is ready", 0, page.navigations)
+                val ready = MainActivity::class.java.getDeclaredMethod("routingPrepared", Boolean::class.javaPrimitiveType).apply { isAccessible = true }
+                ready.invoke(activity, true)
+                assertEquals(1, page.navigations); assertEquals("Queued page must not also be reloaded", 0, page.reloads)
+                ready.invoke(activity, false)
+                assertEquals("Pending navigation is consumed once", 1, page.navigations)
+            }
+        }
     }
     @Test fun openingClosingAndFocusingPanesPreservesExistingDocument() {
         InstrumentationRegistry.getInstrumentation().targetContext.getSharedPreferences("football-arena", 0).edit().clear()

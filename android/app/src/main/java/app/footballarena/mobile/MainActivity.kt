@@ -58,6 +58,8 @@ class MainActivity : Activity() {
     private val viewSites = java.util.concurrent.ConcurrentHashMap<WebView, String>()
     private val safetyWarnings = mutableSetOf<WebView>()
     private var routingGeneration = 0
+    private var routingReady = false
+    private val pendingNavigations = linkedMapOf<WebView, String>()
     private fun routingMode() = prefs.getString("dpiMode", "auto") ?: "auto"
     private var leanback = false
     private val bg = Color.rgb(11, 15, 20)
@@ -297,7 +299,7 @@ class MainActivity : Activity() {
         if (!automaticRoutes.retryWithBypass(host)) return false
         bypassPages.remove(view); paintDpiStatus()
         if (view === browser) status.text = "Retrying with bypass…"
-        view.post { if (!isFinishing && viewSites.containsKey(view) && view !in safetyWarnings) view.loadUrl(url) }
+        view.post { if (!isFinishing && viewSites.containsKey(view) && view !in safetyWarnings) loadPage(view, url) }
         return true
     }
     private fun pageFailed(view: WebView, url: String, message: String) {
@@ -358,7 +360,7 @@ class MainActivity : Activity() {
             val page = if (pages.isEmpty() && browser.url == null) browser else createPage()
             pages[site.id] = page; pageSites[site.id] = site
             viewSites[page] = site.id
-            if (page.url.isNullOrBlank()) page.loadUrl(site.url)
+            if (page.url.isNullOrBlank()) loadPage(page, site.url)
         }
         browser = pages[site.id]!!
         selected = site.id
@@ -414,7 +416,7 @@ class MainActivity : Activity() {
             val mainButton = button("▣", true) { mainPane = if (mainPane == key) "" else key; renderPages() }.apply { contentDescription = "Toggle main pane" }
             mainButtons[key] = mainButton; controls.addView(mainButton)
             controls.addView(button("♫") { selectedKey = key; browser = page; volumeDialog(key) })
-            controls.addView(button("↻") { page.reload() })
+            controls.addView(button("↻") { if (routingReady) page.reload() else (page.url ?: pageSites[key]?.url)?.let { loadPage(page, it) } })
             controls.addView(button("×") { selectedKey = key; closePane() })
             container.addView(controls)
             val navigation = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(6), dp(2), dp(6), dp(6)) }
@@ -430,7 +432,7 @@ class MainActivity : Activity() {
                 setOnEditorActionListener { _, _, _ ->
                     var url = text.toString().trim(); if (!url.startsWith("http://") && !url.startsWith("https://")) url = "https://$url"
                     val uri = android.net.Uri.parse(url)
-                    if (uri.host != null && uri.scheme in listOf("https", "http")) { automaticRoutes.registerHost(viewSites[page] ?: key, uri.host!!); page.loadUrl(url); clearFocus() }
+                    if (uri.host != null && uri.scheme in listOf("https", "http")) { automaticRoutes.registerHost(viewSites[page] ?: key, uri.host!!); loadPage(page, url); clearFocus() }
                     true
                 }
             }
@@ -473,7 +475,16 @@ class MainActivity : Activity() {
         automaticRoutes.registerSite(stableId, url)
         browser = pages[selectedKey]!!
         viewSites[browser] = stableId
-        status.text = "Loading…"; renderSiteBar(); renderPages(); browser.loadUrl(url)
+        status.text = "Loading…"; renderSiteBar(); renderPages(); loadPage(browser, url)
+    }
+    private fun loadPage(page: WebView, url: String) {
+        if (routingReady) page.loadUrl(url) else pendingNavigations[page] = url
+    }
+    private fun routingPrepared(reload: Boolean) {
+        routingReady = true
+        val queued = pendingNavigations.toMap(); pendingNavigations.clear()
+        queued.forEach { (page, url) -> if (page in pages.values) page.loadUrl(url) }
+        if (reload) pages.values.filter { it !in queued }.forEach { it.reload() }
     }
 
     private fun button(label: String, primary: Boolean = false, action: (View) -> Unit): Button {
@@ -680,8 +691,9 @@ class MainActivity : Activity() {
             }.setNegativeButton("Cancel", null).show()
     }
     private fun updateDpi(reload: Boolean) {
+        routingReady = false
         bypassPages.clear()
-        if (!WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) { dpiState = "Unsupported WebView"; paintDpiStatus(); return }
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) { dpiState = "Unsupported WebView"; paintDpiStatus(); routingPrepared(reload); return }
         dpiState = "Starting"; paintDpiStatus()
         val executor = java.util.concurrent.Executor { runOnUiThread(it) }
         val generation = ++routingGeneration
@@ -689,7 +701,7 @@ class MainActivity : Activity() {
         ProxyController.getInstance().clearProxyOverride(executor) {
             if (generation != routingGeneration || isFinishing) return@clearProxyOverride
             dpiProxy?.stop(); dpiProxy = null
-            if (routingMode() == "off") { dpiState = "Direct"; paintDpiStatus(); if (reload) pages.values.forEach { it.reload() }; return@clearProxyOverride }
+            if (routingMode() == "off") { dpiState = "Direct"; paintDpiStatus(); routingPrepared(reload); return@clearProxyOverride }
             try {
                 val proxy = DpiProxy(prefs.getInt("dpiFragment", 32).coerceIn(8, 64), tlsRecords = prefs.getBoolean("dpiTlsRecords", true), routing = if (routingMode() == "auto") automaticRoutes else null)
                 val port = proxy.start(); dpiProxy = proxy
@@ -697,7 +709,7 @@ class MainActivity : Activity() {
                 ProxyController.getInstance().setProxyOverride(config, executor) {
                     if (generation != routingGeneration || isFinishing) return@setProxyOverride
                     dpiState = if (routingMode() == "auto") "Automatic" else "Always bypass"; paintDpiStatus()
-                    if (reload) pages.values.forEach { it.reload() }
+                    routingPrepared(reload)
                 }
             } catch (e: Exception) { dpiProxy?.stop(); dpiProxy = null; dpiState = "Failed"; paintDpiStatus(); toast(e.message ?: "Could not start DPI bypass") }
         }
@@ -797,6 +809,7 @@ class MainActivity : Activity() {
     }
     private fun closePane() {
         val page = pages.remove(selectedKey) ?: return
+        pendingNavigations.remove(page)
         bypassPages.remove(page)
         errorLabels.remove(page); loadErrors.remove(page); historyButtons.remove(page)
         addresses.remove(page)
