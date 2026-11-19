@@ -731,7 +731,7 @@ class MainActivity : Activity() {
     private fun runAutoSkip(view: WebView = browser) {
         applyAudio()
         try {
-            view.evaluateJavascript(contentSettings(view) + adSkipScript + ";window.__faApplyContentSettings&&window.__faApplyContentSettings({skipOff:window.__faAdOff,blockAds:window.__faBlockAds});", null)
+            view.evaluateJavascript("try {" + contentSettings(view) + adSkipScript + ";window.__faApplyContentSettings&&window.__faApplyContentSettings({skipOff:window.__faAdOff,blockAds:window.__faBlockAds});}catch(e){window.__faContentError=String(e);}", null)
         } catch (_: Exception) { }
     }
     private fun contentSettings(view: WebView) = "window.__faSiteId=${JSONObject.quote(viewSites[view] ?: "")};window.__faAdOff=${!prefs.getBoolean("autoskip", true)};window.__faBlockAds=${prefs.getBoolean("adblock", true)};"

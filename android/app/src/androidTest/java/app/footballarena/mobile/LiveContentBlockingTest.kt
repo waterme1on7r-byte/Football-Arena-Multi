@@ -51,8 +51,10 @@ class LiveContentBlockingTest {
             banners:Array.from(document.querySelectorAll('a img')).slice(0,25).map(e=>({alt:e.alt,height:e.getBoundingClientRect().height,marked:!!e.closest('[data-fa-ad-hidden]')})),
             frames:Array.from(document.querySelectorAll('iframe')).slice(0,8).map(e=>({id:e.id,src:e.getAttribute('src'),height:e.getBoundingClientRect().height}))})""")
         val summary=runCatching { JSONArray("[$raw]").getString(0) }.getOrDefault(raw)
-        val reports=java.io.File(instrumentation.targetContext.getExternalFilesDir(null),"live-reports").apply { mkdirs() }
-        java.io.File(reports,"$name.json").writeText(summary)
+        // Gradle uninstalls the APK after instrumentation: write through shell-owned tee stdin.
+        val pipes=instrumentation.uiAutomation.executeShellCommandRw("tee /data/local/tmp/football-arena-ui/$name.json")
+        android.os.ParcelFileDescriptor.AutoCloseOutputStream(pipes[1]).use { it.write(summary.toByteArray()) }
+        android.os.ParcelFileDescriptor.AutoCloseInputStream(pipes[0]).use { it.readBytes() }
     }
     private fun checkSite(id:String,playerSelector:String,adSelector:String,preRoll:Boolean=false) {
         instrumentation.targetContext.getSharedPreferences("football-arena",0).edit().clear()

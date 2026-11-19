@@ -24,7 +24,7 @@ class AutoSkipIntegrationTest {
             Thread.sleep(100)
         }
         var snapshot = ""; val latch = CountDownLatch(1)
-        scenario.onActivity { view.evaluateJavascript("JSON.stringify({upper:window.upper,icon:window.icon,jw:window.jw,countdown:window.countdown,custom:window.custom,adPosition:window.adPosition,width:innerWidth,hidden:document.hidden})") { snapshot = it; latch.countDown() } }
+        scenario.onActivity { view.evaluateJavascript("JSON.stringify({error:window.__faContentError,commit:window.fixtureCommit,finish:window.fixtureFinish,stats:window.__faContentStats,upper:window.upper,icon:window.icon,jw:window.jw,countdown:window.countdown,custom:window.custom,adPosition:window.adPosition,width:innerWidth,hidden:document.hidden})") { snapshot = it; latch.countDown() } }
         latch.await(3,TimeUnit.SECONDS)
         fail("Fixture did not reach: $expression; snapshot=$snapshot")
     }
@@ -117,8 +117,8 @@ class AutoSkipIntegrationTest {
                 val nativeClient=MainActivity::class.java.getDeclaredMethod("makePageClient").apply { isAccessible=true }.invoke(a) as WebViewClient
                 page.webViewClient=object:WebViewClient() {
                     override fun shouldInterceptRequest(view:WebView,request:WebResourceRequest)=WebResourceResponse("text/html","UTF-8",(if(request.url.path=="/frame")player else root).byteInputStream())
-                    override fun onPageCommitVisible(view:WebView,url:String)=nativeClient.onPageCommitVisible(view,url)
-                    override fun onPageFinished(view:WebView,url:String)=nativeClient.onPageFinished(view,url)
+                    override fun onPageCommitVisible(view:WebView,url:String){view.evaluateJavascript("window.fixtureCommit=true",null);nativeClient.onPageCommitVisible(view,url)}
+                    override fun onPageFinished(view:WebView,url:String){view.evaluateJavascript("window.fixtureFinish=true",null);nativeClient.onPageFinished(view,url)}
                 }
                 page.loadUrl("https://fixture.example/")
             }
