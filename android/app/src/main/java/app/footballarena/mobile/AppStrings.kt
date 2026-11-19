@@ -20,6 +20,15 @@ object AppStrings {
         val json = JSONObject(context.assets.open("i18n-tr.json").bufferedReader().use { it.readText() })
         catalog = json.keys().asSequence().associateWith { json.getString(it) } + mapOf(
             "Save site" to "Siteyi kaydet",
+            "Ad blocking diagnostics" to "Reklam engelleme tanılaması",
+            "Check blocking activity and embedded-player support." to "Engelleme etkinliğini ve gömülü oynatıcı desteğini kontrol edin.",
+            "Advertising domains" to "Reklam alan adları",
+            "Requests blocked this session" to "Bu oturumda engellenen istekler",
+            "Service-worker requests blocked" to "Engellenen servis çalışanı istekleri",
+            "Skip buttons pressed on this page" to "Bu sayfada basılan reklam atlama düğmeleri",
+            "Embedded-player support" to "Gömülü oynatıcı desteği",
+            "Available" to "Kullanılabilir",
+            "Update Android System WebView for embedded-player auto-skip." to "Gömülü oynatıcıda otomatik atlama için Android System WebView'i güncelleyin.",
             "DPI bypass" to "DPI engel aşma",
             "Enable or disable DPI bypass for this app." to "Bu uygulama için DPI engel aşmayı açın veya kapatın.",
             "Embedded content error" to "Gömülü içerik hatası",

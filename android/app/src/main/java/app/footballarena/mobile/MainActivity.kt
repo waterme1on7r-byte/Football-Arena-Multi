@@ -25,6 +25,8 @@ private data class Site(val id: String, val name: String, val url: String, val q
 /** Android phone and Android TV shell. Chat is intentionally omitted on both form factors. */
 class MainActivity : Activity() {
     private val prefs by lazy { getSharedPreferences("football-arena", MODE_PRIVATE) }
+    private val contentBlocker by lazy { ContentBlocker(applicationContext) }
+    private val adSkipScript by lazy { assets.open("adskip.js").bufferedReader().use { it.readText() } }
     private val io = Executors.newSingleThreadExecutor()
     private val sites = mutableListOf<Site>()
     private lateinit var listBar: LinearLayout
@@ -90,6 +92,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppStrings.init(this)
+        contentBlocker.installServiceWorkerBlocking()
         leanback = packageManager.hasSystemFeature("android.software.leanback")
         window.statusBarColor = bg
         window.navigationBarColor = bg
@@ -277,6 +280,7 @@ class MainActivity : Activity() {
                 }
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     val u = request.url.toString()
+                    if (contentBlocker.blocksNavigation(u)) return true
                     val desktop = desktopUrl(view, u)
                     if (request.isForMainFrame && request.method == "GET" && desktop != u) {
                         val previous = desktopRedirects[view]
@@ -292,9 +296,7 @@ class MainActivity : Activity() {
                 }
                 override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
                     request.url.host?.let { host -> viewSites[view]?.let { automaticRoutes.registerHost(it, host) } }
-                    if (!prefs.getBoolean("adblock", true)) return null
-                    if (AdRules.blocks(request.url.toString())) return WebResourceResponse("text/plain", "utf-8", 204, "No Content", emptyMap(), "".byteInputStream())
-                    return null
+                    return contentBlocker.intercept(request.url.toString())
                 }
                 override fun onPageFinished(view: WebView, url: String) {
                     super.onPageFinished(view, url)
@@ -723,18 +725,37 @@ class MainActivity : Activity() {
     private fun runAutoSkip(view: WebView = browser) {
         applyAudio()
         try {
-            view.evaluateJavascript(contentSettings() + "document.querySelectorAll('iframe').forEach(f=>f.contentWindow.postMessage({type:'football-arena-content-settings',skipOff:window.__faAdOff,blockAds:window.__faBlockAds},'*'));", null)
-            val js = assets.open("adskip.js").bufferedReader().use { it.readText() }
-            view.evaluateJavascript(js, null)
-            view.postDelayed({ if (!isFinishing) try { view.evaluateJavascript(js, null) } catch (_: Exception) {} }, 1800)
+            view.evaluateJavascript(contentSettings() + adSkipScript + ";window.__faApplyContentSettings&&window.__faApplyContentSettings({skipOff:window.__faAdOff,blockAds:window.__faBlockAds});", null)
         } catch (_: Exception) { }
     }
     private fun contentSettings() = "window.__faAdOff=${!prefs.getBoolean("autoskip", true)};window.__faBlockAds=${prefs.getBoolean("adblock", true)};"
     private fun installContentScript(view: WebView) {
         contentScripts.remove(view)?.remove()
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-            val script = contentSettings() + "document.addEventListener('DOMContentLoaded',function(){" + assets.open("adskip.js").bufferedReader().use { it.readText() } + "},{once:true});"
+            val script = contentSettings() + adSkipScript
             contentScripts[view] = androidx.webkit.WebViewCompat.addDocumentStartJavaScript(view, script, setOf("*"))
+        }
+    }
+    private fun contentBlockingDiagnostics() {
+        val page = browser
+        page.evaluateJavascript("JSON.stringify(window.__faContentStats||{})") { value ->
+            if (isFinishing) return@evaluateJavascript
+            val stats = runCatching { JSONObject(JSONArray("[$value]").getString(0)) }.getOrElse { JSONObject() }
+            val frameSupport = WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)
+            val engine = if (android.os.Build.VERSION.SDK_INT >= 26) WebView.getCurrentWebViewPackage()?.versionName else null
+            fun state(key: String) = AppStrings.t(if (prefs.getBoolean(key, true)) "On" else "Off")
+            val lines = listOf(
+                AppStrings.t("Ad blocking") + ": " + state("adblock"),
+                AppStrings.t("Advertising domains") + ": " + AdRules.domainCount,
+                AppStrings.t("Requests blocked this session") + ": " + contentBlocker.blockedRequests.get(),
+                AppStrings.t("Service-worker requests blocked") + ": " + contentBlocker.blockedWorkerRequests.get(),
+                "",
+                AppStrings.t("Auto-skip") + ": " + state("autoskip"),
+                AppStrings.t("Skip buttons pressed on this page") + ": " + stats.optInt("skipActions"),
+                AppStrings.t("Embedded-player support") + ": " + AppStrings.t(if (frameSupport) "Available" else "Update Android System WebView for embedded-player auto-skip."),
+                "WebView: ${engine ?: "Unknown"}"
+            )
+            ArenaDialog.Builder(this).setTitle("Ad blocking diagnostics").setMessage(lines.joinToString("\n")).setPositiveButton("Close", null).show()
         }
     }
 
@@ -949,6 +970,7 @@ class MainActivity : Activity() {
                     row("DPI options & diagnostics", "See routed connections, handshakes, errors, and fragment options.", action = { dpiMenu() })
                     row("Ad blocking", "Block known advertising hosts.", "adblock", true)
                     row("Auto-skip", "Attempt to skip supported video ads.", "autoskip", true)
+                    row("Ad blocking diagnostics", "Check blocking activity and embedded-player support.", action = { contentBlockingDiagnostics() })
                 }
             }
         }
@@ -1013,7 +1035,7 @@ class MainActivity : Activity() {
             fun accept(url: String) {
                 if (handled || !(url.startsWith("https://") || url.startsWith("http://"))) return
                 handled = true
-                if (!prefs.getBoolean("adblock", true) || !AdRules.blocks(url)) openUrl(url)
+                if (!contentBlocker.blocksNavigation(url)) openUrl(url)
                 child.post { child.destroy() }
             }
             child.webViewClient = object : WebViewClient() {

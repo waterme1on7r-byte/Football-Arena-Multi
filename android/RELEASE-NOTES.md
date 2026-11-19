@@ -1,4 +1,14 @@
-Android 1.8.26 preview
+Android 1.8.27 preview
+
+- Load a bundled Peter Lowe advertising/tracking-host snapshot (3,568 domains) alongside existing network rules, with domain-boundary matching.
+- Apply the same blocking preference to page/frame requests, ad navigations, new-window links and service-worker fetches. Blocked responses are not cached.
+- Start player scripts at document creation, recognize uppercase English/Turkish labels, accessible icon buttons and common skip controls, and wait for countdown buttons to become ready.
+- Synchronize settings with existing, delayed and nested player frames without refreshing matches.
+- Keep match mute/volume unchanged when skipping a finite ad video.
+- Add Settings → Network → Ad blocking diagnostics with request counts, service-worker blocks, skip-button activity and WebView frame-injection support.
+- Add native integration tests using real local HTTP and service workers, plus embedded-player fixtures. Website-specific and server-inserted ads can still require site-specific handling.
+
+Previous improvements retained:
 
 - Add a DPI enable/disable switch inside Football Arena Settings → Network, synchronized with routing mode and the toolbar power control.
 - Switching back on restores the previous enabled routing mode (Automatic or Always bypass).
