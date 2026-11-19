@@ -84,6 +84,24 @@ class AutoSkipIntegrationTest {
             awaitJs(scenario,page,"getComputedStyle(document.getElementById('zone_1717130822')).display==='none'&&getComputedStyle(zone_info).display!=='none'&&getComputedStyle(document.getElementById('zone_123')).display!=='none'&&playerFrame.getBoundingClientRect().width>0")
         }
     }
+    @Test fun sponsoredPageSkinAndBannerPrefixesAreRemovedAndRestoredWithoutReload() {
+        prepare()
+        val root="""<html><head><style>body{background-image:url('https://media.example/pageskin.jpg')}</style></head><body>
+            <div id="logo">Site logo</div><div class="background-link"><a href="https://promo.invalid/"></a></div>
+            <div class="banner-container"><a href="https://promo.invalid/"><img alt="Üst Banner" width="300" height="90"></a></div>
+            <iframe id="player" src="https://player.example/channel" width="500" height="300"></iframe>
+            <script>window.token=Math.random();window.original=window.token;</script></body></html>"""
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            lateinit var page:WebView
+            scenario.onActivity { a -> page=create(a) { if(it.url.host=="player.example") "<html><body>Player</body></html>" else root };page.loadUrl("https://patronizle99.example/") }
+            awaitJs(scenario,page,"getComputedStyle(document.body).backgroundImage==='none'&&getComputedStyle(document.querySelector('.banner-container')).display==='none'&&logo.getBoundingClientRect().height>0&&player.getBoundingClientRect().height>0")
+            scenario.onActivity { a ->
+                a.getSharedPreferences("football-arena",0).edit().putBoolean("adblock",false).commit()
+                MainActivity::class.java.getDeclaredMethod("runAutoSkip",WebView::class.java).apply { isAccessible=true }.invoke(a,page)
+            }
+            awaitJs(scenario,page,"getComputedStyle(document.body).backgroundImage!=='none'&&getComputedStyle(document.querySelector('.banner-container')).display!=='none'&&window.token===window.original")
+        }
+    }
     @Test fun uppercaseLabelsIconButtonsAndCountdownsWorkWithoutMutingOrSeekingTheMatch() {
         prepare()
         val html = """<html><body>

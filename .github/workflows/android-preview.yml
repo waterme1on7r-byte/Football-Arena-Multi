@@ -41,8 +41,7 @@ jobs:
           script: |
             adb shell wm size 1920x1200
             adb shell wm density 240
-            gradle -p android connectedDebugAndroidTest
-            adb pull /data/local/tmp/football-arena-ui ui-check
+            bash -c 'test_result=0; gradle -p android connectedDebugAndroidTest || test_result=$?; adb pull /data/local/tmp/football-arena-ui ui-check || test_result=1; exit "$test_result"'
       - uses: actions/upload-artifact@v7
         if: always()
         with:

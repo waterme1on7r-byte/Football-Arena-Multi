@@ -33,7 +33,7 @@ class LiveContentBlockingTest {
         return false
     }
     private fun screenshot(name:String) {
-        instrumentation.waitForIdleSync()
+        // Animated live banners can keep the UI busy forever. Capture the current compositor frame.
         for(command in listOf("mkdir -p /data/local/tmp/football-arena-ui", "screencap -p /data/local/tmp/football-arena-ui/$name.png")) {
             android.os.ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand(command)).use { it.readBytes() }
         }
@@ -68,6 +68,7 @@ class LiveContentBlockingTest {
                 const player=document.querySelector($selector);
                 return Array.from(document.querySelectorAll($ads)).every(e=>e.getBoundingClientRect().height===0)
                     &&player&&player.getBoundingClientRect().width>0&&player.getBoundingClientRect().height>0
+                    &&(${JSONObject.quote(id)}!=='patronspor'||getComputedStyle(document.body).backgroundImage==='none')
                     &&window.__faLiveDocumentToken===window.__faLiveOriginalToken;
             })()""")
             screenshot("live-$id-after")
@@ -84,10 +85,10 @@ class LiveContentBlockingTest {
             }
         }
     }
-    @Test fun netsporFirstPartyBannersAndCustomPreroll() = checkSite("netspor","#videoPlayer",".banner-container.fullwidth",true)
-    @Test fun mahsunFirstPartyBannersAndCustomPreroll() = checkSite("mahsunsports","#customIframe",".banner-container",true)
-    @Test fun patronPromotionalBannersPreservePlayer() = checkSite("patronspor","iframe#player","#ustBannerLink,#altBannerLink,#footerBannerLink,.hellobar,.background-link")
-    @Test fun ardaAdZonesPreservePlayer() = checkSite("ardaspor","#playerFrame","[id^='zone_'],a[href*='1xbet.com']")
-    @Test fun trgoalsBannersPreservePlayer() = checkSite("trgoals","#customIframe",".ads-container,.ads_single_font,.match-flow-ad")
-    @Test fun zeusBannersPreservePlayer() = checkSite("zeustv","#main-player-container","#ad-hellobar,#ad-top-banner,#ad-player-top,#ad-player-bottom,#ad-background,#page-skin-iframe")
+    @Test(timeout=120000) fun netsporFirstPartyBannersAndCustomPreroll() = checkSite("netspor","#videoPlayer",".banner-container.fullwidth",true)
+    @Test(timeout=120000) fun mahsunFirstPartyBannersAndCustomPreroll() = checkSite("mahsunsports","#customIframe",".banner-container",true)
+    @Test(timeout=120000) fun patronPromotionalBannersPreservePlayer() = checkSite("patronspor","iframe#player","#ustBannerLink,#altBannerLink,#footerBannerLink,.hellobar,.background-link")
+    @Test(timeout=120000) fun ardaAdZonesPreservePlayer() = checkSite("ardaspor","#playerFrame","[id^='zone_'],a[href*='1xbet.com']")
+    @Test(timeout=120000) fun trgoalsBannersPreservePlayer() = checkSite("trgoals","#customIframe",".ads-container,.ads_single_font,.match-flow-ad")
+    @Test(timeout=120000) fun zeusBannersPreservePlayer() = checkSite("zeustv","#main-player-container","#ad-hellobar,#ad-top-banner,#ad-player-top,#ad-player-bottom,#ad-background,#page-skin-iframe")
 }

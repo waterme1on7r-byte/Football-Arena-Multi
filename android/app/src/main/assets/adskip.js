@@ -74,12 +74,13 @@
     if (netsporLayout()) document.querySelectorAll('.banner-container.fullwidth,#splash-banner').forEach(hidePromotion);
     if (siteId() === 'patronspor' || /(^|\.)patronizle\d*\./i.test(location.hostname)) {
       document.querySelectorAll('.background-link,.hellobar,.player-promo').forEach(hidePromotion);
+      if (document.querySelector('.background-link,#ustBannerLink,#altBannerLink')) document.documentElement.setAttribute('data-fa-ad-skin-hidden','true');
     }
     if (siteId() === 'mahsunsports' || /(^|\.)mahsunsports\d*\./i.test(location.hostname)) {
       document.querySelectorAll('#openWheelBtn').forEach(hidePromotion);
     }
     if (sportsLayout()) {
-      document.querySelectorAll('.ads-container,.ads_single_font,.match-flow-ad,#ad-hellobar,#ad-top-banner,#ad-player-top,#ad-player-bottom,#ad-background').forEach(hidePromotion);
+      document.querySelectorAll('.background-link,.ads-container,.ads_single_font,.match-flow-ad,#ad-hellobar,#ad-top-banner,#ad-player-top,#ad-player-bottom,#ad-background').forEach(hidePromotion);
       document.querySelectorAll('iframe[src]').forEach(frame => {
         if (!advertisingFrame(frame)) return;
         hidePromotion(frame);
@@ -101,7 +102,7 @@
     if (!style) {
       style = document.createElement("style");
       // Restrict cosmetics to dedicated banner slots, never the player/pre-roll container.
-      style.textContent = '[data-fa-ad-hidden="true"],ins.adsbygoogle,iframe[id^="google_ads_iframe"],.ad-banner,.advertisement-banner,.popunder{display:none!important}';
+      style.textContent = '[data-fa-ad-hidden="true"],ins.adsbygoogle,iframe[id^="google_ads_iframe"],.ad-banner,.advertisement-banner,.popunder{display:none!important}html[data-fa-ad-skin-hidden="true"] body{background-image:none!important}';
     }
     if (!style.isConnected) (document.head || document.documentElement).appendChild(style);
     style.disabled = !window.__faBlockAds;
