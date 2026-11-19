@@ -70,6 +70,15 @@ class MainActivity : Activity() {
     private val pendingNavigations = linkedMapOf<WebView, String>()
     private val desktopRedirects = mutableMapOf<WebView, Pair<String, Long>>()
     private fun routingMode() = prefs.getString("dpiMode", "auto") ?: "auto"
+    private fun setDpiEnabled(enabled: Boolean) {
+        val current = routingMode()
+        if (enabled == (current != "off")) return
+        val remembered = prefs.getString("dpiEnabledMode", "auto").takeIf { it == "auto" || it == "always" } ?: "auto"
+        val edit = prefs.edit().putString("dpiMode", if (enabled) remembered else "off")
+        if (!enabled) edit.putString("dpiEnabledMode", current)
+        edit.apply()
+        updateDpi(true)
+    }
     private var leanback = false
     private val bg = Color.rgb(11, 15, 20)
     private val panel = Color.rgb(18, 25, 35)
@@ -775,7 +784,7 @@ class MainActivity : Activity() {
     private fun dpiQuickMenu(anchor: View) {
         val controls = LinearLayout(this).apply { setPadding(dp(6), dp(6), dp(6), dp(6)); background = controlBackground(false) }
         val popup = PopupWindow(controls, -2, -2, true).apply { setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)); elevation = dp(12).toFloat(); isOutsideTouchable = true }
-        controls.addView(button("⏻", routingMode() != "off") { prefs.edit().putString("dpiMode", if (routingMode() == "off") "auto" else "off").apply(); popup.dismiss(); updateDpi(true) }.apply { contentDescription = if (routingMode() == "off") "Turn on" else "Turn off" })
+        controls.addView(button("⏻", routingMode() != "off") { popup.dismiss(); setDpiEnabled(routingMode() == "off") }.apply { contentDescription = if (routingMode() == "off") "Turn on" else "Turn off" })
         controls.addView(button("↻") { popup.dismiss(); updateDpi(true) }.apply { contentDescription = "Restart" })
         AppStrings.watch(controls); popup.showAsDropDown(anchor, 0, dp(6))
     }
@@ -874,6 +883,12 @@ class MainActivity : Activity() {
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(16), dp(20), dp(16)) }
         val scroll = ScrollView(this).apply { addView(content); isFillViewport = true }
         body.addView(scroll, LinearLayout.LayoutParams(0, -1, 1f))
+        var dpiSwitch: Switch? = null
+        val routingListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == "dpiMode") dpiSwitch?.isChecked = routingMode() != "off"
+        }
+        prefs.registerOnSharedPreferenceChangeListener(routingListener)
+        dialog.setOnDismissListener { prefs.unregisterOnSharedPreferenceChangeListener(routingListener) }
         fun heading(label: String, description: String) {
             content.addView(TextView(this).apply { text = AppStrings.t(label).uppercase(); textSize = 17f; typeface = brandTypeface; setTextColor(gold); setPadding(0, 0, 0, dp(6)) })
             if (description.isNotBlank()) content.addView(TextView(this).apply { text = description; textSize = 13f; setTextColor(Color.rgb(134,150,168)); setPadding(0, 0, 0, dp(14)) })
@@ -885,12 +900,12 @@ class MainActivity : Activity() {
             if (description.isNotBlank()) labels.addView(TextView(this).apply { text = description; textSize = 12f; setPadding(0, dp(4), 0, 0); setTextColor(Color.rgb(134,150,168)) })
             row.addView(labels, LinearLayout.LayoutParams(0, -2, 1f))
             if (key != null) row.addView(Switch(this).apply {
-                contentDescription = label; isChecked = prefs.getBoolean(key, default)
+                contentDescription = label; isChecked = if (key == "dpi") routingMode() != "off" else prefs.getBoolean(key, default)
+                if (key == "dpi") { dpiSwitch = this; tag = "dpi-settings-switch" }
                 thumbTintList = android.content.res.ColorStateList(arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()), intArrayOf(gold, Color.rgb(175,186,199)))
                 trackTintList = android.content.res.ColorStateList(arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()), intArrayOf(Color.rgb(126,100,44), Color.rgb(57,68,82)))
                 setOnCheckedChangeListener { _, on ->
-                    prefs.edit().putBoolean(key, on).apply()
-                    if (key == "dpi") updateDpi(true)
+                    if (key == "dpi") setDpiEnabled(on) else prefs.edit().putBoolean(key, on).apply()
                     if (key == "focusAudio") applyAudio()
                     if (key == "autoskip" || key == "adblock") pages.values.forEach { installContentScript(it); runAutoSkip(it) }
                 }
@@ -929,6 +944,7 @@ class MainActivity : Activity() {
                 }
                 3 -> {
                     heading("Network", "Automatic uses encrypted DNS for HTTPS pages and resources, and adapts TLS fragmentation when needed.")
+                    row("DPI bypass", "Enable or disable DPI bypass for this app.", "dpi", true)
                     row("Connection routing", "Learned routes expire after four hours or when the site address changes.", action = { routingModeDialog() })
                     row("DPI options & diagnostics", "See routed connections, handshakes, errors, and fragment options.", action = { dpiMenu() })
                     row("Ad blocking", "Block known advertising hosts.", "adblock", true)

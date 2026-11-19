@@ -1,4 +1,7 @@
-Android 1.8.25 preview
+Android 1.8.26 preview
+
+- Add a DPI enable/disable switch inside Football Arena Settings → Network, synchronized with routing mode and the toolbar power control.
+- Switching back on restores the previous enabled routing mode (Automatic or Always bypass).
 
 - Open user-initiated new-window links as yellow temporary tabs with a + save action. Saving preserves the existing page and player.
 - Expand advertising host/path rules to match desktop coverage. Leave player and media CDN URLs alone.

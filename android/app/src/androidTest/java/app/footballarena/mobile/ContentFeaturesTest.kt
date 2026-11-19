@@ -63,6 +63,34 @@ class ContentFeaturesTest {
             scenario.onActivity { dialog.dismiss() }
         }
     }
+    @Test fun appNetworkSwitchControlsRoutingAndRestoresPreviousEnabledMode() {
+        prepare()
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            lateinit var dialog: android.app.Dialog
+            scenario.onActivity { a ->
+                val preferences = a.getSharedPreferences("football-arena", 0)
+                preferences.edit().putString("dpiMode", "always").commit()
+                dialog = MainActivity::class.java.getDeclaredMethod("settingsDialog").apply { isAccessible = true }.invoke(a) as android.app.Dialog
+                val sidebar = dialog.window!!.decorView.findViewWithTag<LinearLayout>("settings-sidebar")
+                sidebar.getChildAt(3).performClick()
+                val toggle = dialog.window!!.decorView.findViewWithTag<android.widget.Switch>("dpi-settings-switch")
+                assertTrue(toggle.isChecked)
+                toggle.performClick()
+                assertEquals("off", preferences.getString("dpiMode", ""))
+                toggle.performClick()
+                assertEquals("always", preferences.getString("dpiMode", ""))
+                MainActivity::class.java.getDeclaredMethod("setDpiEnabled", Boolean::class.javaPrimitiveType).apply { isAccessible = true }.invoke(a, false)
+                assertFalse("Toolbar and settings must share one routing state", toggle.isChecked)
+                toggle.performClick()
+                assertEquals("always", preferences.getString("dpiMode", ""))
+            }
+            instrumentation.waitForIdleSync()
+            for (cmd in listOf("mkdir -p /data/local/tmp/football-arena-ui", "screencap -p /data/local/tmp/football-arena-ui/tablet-network-settings.png")) {
+                android.os.ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand(cmd)).use { it.readBytes() }
+            }
+            scenario.onActivity { dialog.dismiss() }
+        }
+    }
     @Test fun temporaryLinkCanBeSavedWithoutRecreatingAnyPage() {
         prepare()
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->

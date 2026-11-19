@@ -20,6 +20,8 @@ object AppStrings {
         val json = JSONObject(context.assets.open("i18n-tr.json").bufferedReader().use { it.readText() })
         catalog = json.keys().asSequence().associateWith { json.getString(it) } + mapOf(
             "Save site" to "Siteyi kaydet",
+            "DPI bypass" to "DPI engel aşma",
+            "Enable or disable DPI bypass for this app." to "Bu uygulama için DPI engel aşmayı açın veya kapatın.",
             "Embedded content error" to "Gömülü içerik hatası",
             "Deceptive site warning" to "Yanıltıcı site uyarısı",
             "Back to safety" to "Güvenli sayfaya dön",
