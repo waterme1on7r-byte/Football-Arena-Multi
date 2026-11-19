@@ -45,6 +45,7 @@ class MainActivity : Activity() {
     private var mainPane = ""
     private var dpiProxy: DpiProxy? = null
     private var dpiState = "Off"
+    private var bypassPageLoaded = false
     private val loadErrors = mutableMapOf<WebView, String>()
     private val errorLabels = mutableMapOf<WebView, TextView>()
     private var lastPageError = "None"
@@ -59,7 +60,7 @@ class MainActivity : Activity() {
     private var leanback = false
     private val bg = Color.rgb(11, 15, 20)
     private val panel = Color.rgb(18, 25, 35)
-    private val gold = Color.rgb(245, 196, 81)
+    private val gold = Color.rgb(246, 196, 81)
     private val text = Color.rgb(233, 237, 242)
     private val adHosts = setOf("doubleclick.net", "googlesyndication.com", "googleadservices.com", "adnxs.com", "adsrvr.org", "taboola.com", "outbrain.com")
 
@@ -77,14 +78,28 @@ class MainActivity : Activity() {
         else if (prefs.contains("passHash")) unlock() else startSession()
     }
     private fun languageDialog(firstLaunch: Boolean = false) {
-        val values = listOf("tr", "en")
-        ArenaDialog.Builder(this).setTitle("Choose language").setCancelable(!firstLaunch)
-            .setSingleChoiceItems(arrayOf("Türkçe", "English"), values.indexOf(AppStrings.language)) { dialog, index ->
-                AppStrings.language = values[index]
-                prefs.edit().putString("language", values[index]).putBoolean("languageChosen", true).apply()
-                AppStrings.apply(root); dialog.dismiss()
+        var chosen = AppStrings.language
+        val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        body.addView(TextView(this).apply { tag = "user-content"; text = "Football Arena için dil seçin.\nSelect a language for Football Arena."; setTextColor(Color.rgb(150,167,186)); textSize = 14f; setPadding(0, 0, 0, dp(20)) })
+        val options = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        val choices = mutableListOf<Button>()
+        for ((value, label) in listOf("tr" to "🇹🇷  Türkçe", "en" to "🇺🇸  English")) {
+            val b = button(label, value == chosen) {
+                chosen = value
+                choices.forEachIndexed { i, choice -> val active = (if (i == 0) "tr" else "en") == chosen; choice.background = controlBackground(active); choice.setTextColor(if (active) bg else text) }
+            }.apply { tag = "user-content"; setSingleLine(true) }
+            choices.add(b); options.addView(b, LinearLayout.LayoutParams(0, dp(52), 1f).apply { marginEnd = dp(6) })
+        }
+        body.addView(options)
+        val d = ArenaDialog.Builder(this).setTitle("DİL / LANGUAGE").setView(body).setCancelable(!firstLaunch)
+            .setPositiveButton("Continue") { _, _ ->
+                AppStrings.language = chosen
+                prefs.edit().putString("language", chosen).putBoolean("languageChosen", true).apply()
+                AppStrings.apply(root)
                 if (firstLaunch) { if (prefs.contains("passHash")) unlock() else startSession() }
-            }.show()
+            }
+        if (!firstLaunch) d.setNegativeButton("Cancel", null)
+        d.show()
     }
     private fun startSession() {
         updateDpi(false)
@@ -178,7 +193,7 @@ class MainActivity : Activity() {
         tools.addView(dpiButton)
         val segment = LinearLayout(this).apply { background = controlBackground(false); clipToOutline = true }
         listOf("Auto", "1", "2", "3", "4").forEachIndexed { n, label ->
-            val b = button(label, n == layoutCount) { setLayout(n) }.apply { layoutParams = LinearLayout.LayoutParams(dp(if (n == 0) 70 else 42), dp(42)); minWidth = 0; setPadding(dp(6), 0, dp(6), 0) }
+            val b = button(label, n == layoutCount) { setLayout(n) }.apply { layoutParams = LinearLayout.LayoutParams(dp(if (n == 0) 94 else 40), dp(42)); minWidth = 0; minimumWidth = 0; setSingleLine(true); setPadding(dp(6), 0, dp(6), 0) }
             layoutButtons.add(b); segment.addView(b)
         }
         tools.addView(segment)
@@ -240,6 +255,9 @@ class MainActivity : Activity() {
                         prefs.edit().putString("last", url).putString("lastSiteId", viewSites[view] ?: "").apply()
                         status.text = if (loadErrors.containsKey(view)) "Page failed · see pane" else "Ready"
                     }
+                    if (!loadErrors.containsKey(view) && view !in safetyWarnings && url.startsWith("https://") && dpiProxy != null && (routingMode() == "always" || android.net.Uri.parse(url).host?.let { automaticRoutes.usesBypass(it) } == true)) {
+                        bypassPageLoaded = true; paintDpiStatus()
+                    }
                     runAutoSkip(view)
                 }
                 override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
@@ -280,7 +298,7 @@ class MainActivity : Activity() {
         root.addView(View(this).apply { setBackgroundColor(Color.rgb(34,48,66)) }, LinearLayout.LayoutParams(-1, dp(1)))
         val footer = FrameLayout(this).apply { setPadding(dp(14), dp(4), dp(14), dp(4)); setBackgroundColor(bg) }
         status = TextView(this).apply { setTextColor(Color.LTGRAY); textSize = 12f; text = "Ready" }
-        status.gravity = Gravity.CENTER_VERTICAL; status.maxWidth = dp(180)
+        status.gravity = Gravity.END or Gravity.CENTER_VERTICAL; status.maxWidth = dp(300); status.setSingleLine(true); status.ellipsize = android.text.TextUtils.TruncateAt.END
         footer.addView(button("Update links") { refreshLinks(true) }, FrameLayout.LayoutParams(-2, dp(38), Gravity.START or Gravity.CENTER_VERTICAL))
         footer.addView(status, FrameLayout.LayoutParams(-2, dp(32), Gravity.END or Gravity.CENTER_VERTICAL))
         footer.addView(TextView(this).apply { text = "WTMLJR"; setTextColor(gold); textSize = 12f; letterSpacing = .25f; gravity = Gravity.CENTER }, FrameLayout.LayoutParams(-2, dp(32), Gravity.CENTER))
@@ -347,8 +365,8 @@ class MainActivity : Activity() {
         if (!::stage.isInitialized) return
         val count = if (layoutCount == 0) 4 else layoutCount
         val open = (listOf(selectedKey) + pages.keys.filter { it != selectedKey }).filter { it in pages }.take(count)
-        val prominent = mainPane in open && open.size > 1
-        val cols = if (open.size > 1) 2 else 1
+        val prominent = mainPane in open && open.size > 1 && resources.configuration.screenWidthDp >= 600
+        val cols = if (open.size > 1 && resources.configuration.screenWidthDp >= 600) 2 else 1
         pages.values.forEach { (it.parent as? android.view.ViewGroup)?.removeView(it) }
         stage.removeAllViews(); stage.rowCount = GridLayout.UNDEFINED; stage.columnCount = cols; stage.rowCount = if (prominent) open.size - 1 else (open.size + cols - 1) / cols
         val ordered = if (prominent) listOf(mainPane) + open.filter { it != mainPane } else open
@@ -361,19 +379,25 @@ class MainActivity : Activity() {
                 width = 0; height = 0; setMargins(dp(4), dp(4), dp(4), dp(4))
             }
             val pane = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; background = controlBackground(false); clipToOutline = true; setPadding(dp(1), dp(1), dp(1), dp(1)) }
-            val controls = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(4), dp(4), dp(4), dp(4)) }
+            val controls = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(6), dp(4), dp(6), dp(2)) }
             controls.addView(TextView(this).apply {
                 tag = "user-content"; text = pageSites[key]?.name ?: "Page"; setTextColor(gold); typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(12), 0, dp(12), 0); maxWidth = dp(160); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
                 isFocusable = true; setOnClickListener { selectedKey = key; browser = page; renderSiteBar(); applyAudio() }
-            }, LinearLayout.LayoutParams(-2, dp(42)))
-            controls.addView(button("▣", mainPane == key) { mainPane = if (mainPane == key) "" else key; renderPages() }.apply { contentDescription = "Toggle main pane" })
+            }, LinearLayout.LayoutParams(0, dp(42), 1f))
+            controls.addView(button("▣", true) { mainPane = if (mainPane == key) "" else key; renderPages() }.apply { contentDescription = "Toggle main pane"; isSelected = mainPane == key })
+            controls.addView(button("♫") { selectedKey = key; browser = page; volumeDialog(key) })
+            controls.addView(button("↻") { page.reload() })
+            controls.addView(button("×") { selectedKey = key; closePane() })
+            pane.addView(controls)
+            val navigation = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(6), dp(2), dp(6), dp(6)) }
             val back = button("‹") { if (page.canGoBack()) page.goBack() }.apply { contentDescription = "Back"; isEnabled = page.canGoBack() }
             val forward = button("›") { if (page.canGoForward()) page.goForward() }.apply { contentDescription = "Forward"; isEnabled = page.canGoForward() }
             historyButtons[page] = back to forward
-            controls.addView(back); controls.addView(forward)
+            navigation.addView(back); navigation.addView(forward)
             val address = EditText(this).apply {
                 setSingleLine(true); setText(page.url ?: pageSites[key]?.url ?: ""); textSize = 13f; setTextColor(this@MainActivity.text)
+                minimumWidth = 0; minWidth = 0; setPadding(dp(10), 0, dp(10), 0); background = controlBackground(false)
                 contentDescription = "Address bar"; inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
                 imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_GO
                 setOnEditorActionListener { _, _, _ ->
@@ -384,11 +408,8 @@ class MainActivity : Activity() {
                 }
             }
             addresses[page] = address
-            controls.addView(address, LinearLayout.LayoutParams(dp(230), dp(42)))
-            controls.addView(button("♫") { selectedKey = key; browser = page; volumeDialog(key) })
-            controls.addView(button("↻") { page.reload() })
-            controls.addView(button("×") { selectedKey = key; closePane() })
-            pane.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(controls) })
+            navigation.addView(address, LinearLayout.LayoutParams(0, dp(40), 1f).apply { marginStart = dp(4) })
+            pane.addView(navigation)
             val viewport = FrameLayout(this)
             viewport.addView(page, FrameLayout.LayoutParams(-1, -1))
             val errorLabel = TextView(this).apply {
@@ -424,17 +445,29 @@ class MainActivity : Activity() {
         status.text = "Loading…"; renderSiteBar(); renderPages(); browser.loadUrl(url)
     }
 
-    private fun button(label: String, primary: Boolean = false, action: (View) -> Unit): Button = Button(this).apply {
+    private fun button(label: String, primary: Boolean = false, action: (View) -> Unit): Button {
         val icon = mapOf("‹" to "back", "›" to "forward", "×" to "close", "↻" to "refresh", "▣" to "main", "♫" to "sound", "⏻" to "power")[label]
+        return object : Button(this) {
+            private val glyph = icon?.let { ControlIcon(it, if (primary) bg else this@MainActivity.text, dp(20)) }
+            override fun onDraw(canvas: android.graphics.Canvas) {
+                super.onDraw(canvas)
+                glyph?.let { drawable ->
+                    val size = dp(20); val left = (width - size) / 2; val top = (height - size) / 2
+                    drawable.alpha = if (isEnabled) 255 else 80; drawable.setBounds(left, top, left + size, top + size); drawable.draw(canvas)
+                }
+            }
+        }.apply {
         text = if (icon == null) label else ""; isAllCaps = false; textSize = if (leanback) 17f else 14f; setTextColor(if (primary) bg else this@MainActivity.text)
+        gravity = Gravity.CENTER; setSingleLine(true); ellipsize = android.text.TextUtils.TruncateAt.END
         background = controlBackground(primary)
         if (icon != null) {
             contentDescription = mapOf("back" to "Back", "forward" to "Forward", "close" to "Close", "refresh" to "Refresh", "main" to "Main pane", "sound" to "Sound", "power" to "Turn off")[icon]
-            setCompoundDrawablesWithIntrinsicBounds(ControlIcon(icon, if (primary) bg else this@MainActivity.text, dp(22)), null, null, null)
         }
-        minHeight = dp(if (leanback) 50 else 42); minimumHeight = minHeight; minWidth = dp(if (leanback) 72 else 48)
+        minHeight = 0; minimumHeight = 0; minWidth = 0; minimumWidth = 0
         isFocusable = true; setOnClickListener { action(it) }; setPadding(dp(10), 0, dp(10), 0)
-        val lp = LinearLayout.LayoutParams(-2, dp(if (leanback) 50 else 42)); lp.marginStart = dp(4); lp.marginEnd = dp(4); layoutParams = lp
+        val size = if (leanback) 48 else 40
+        val lp = LinearLayout.LayoutParams(if (icon != null) dp(size) else -2, dp(if (leanback) 48 else 42)); lp.marginStart = dp(3); lp.marginEnd = dp(3); layoutParams = lp
+        }
     }
     private fun controlBackground(primary: Boolean, pill: Boolean = false): android.graphics.drawable.StateListDrawable {
         fun shape(fill: Int, stroke: Int) = android.graphics.drawable.GradientDrawable().apply { setColor(fill); cornerRadius = dp(if (pill) 24 else 8).toFloat(); setStroke(dp(1), stroke) }
@@ -597,7 +630,8 @@ class MainActivity : Activity() {
     private fun paintDpiStatus() {
         dpiButton.text = "● DPI"
         dpiButton.contentDescription = "DPI · $dpiState"
-        dpiButton.setTextColor(when (dpiState) { "Automatic", "Always bypass" -> Color.rgb(67,222,143); "Failed" -> Color.rgb(255,115,115); "Starting" -> gold; else -> Color.rgb(134,150,168) })
+        dpiButton.setTextColor(when (dpiState) { "Automatic", "Always bypass" -> if (bypassPageLoaded) Color.rgb(67,222,143) else gold; "Failed" -> Color.rgb(255,115,115); "Starting" -> gold; else -> Color.rgb(134,150,168) })
+        dpiButton.contentDescription = AppStrings.t("DPI · $dpiState") + " · " + AppStrings.t(if (bypassPageLoaded) "Page loaded with bypass" else "Bypass ready; access not verified")
     }
     private fun dpiMenu() {
         val p = dpiProxy
@@ -621,6 +655,7 @@ class MainActivity : Activity() {
             }.setNegativeButton("Cancel", null).show()
     }
     private fun updateDpi(reload: Boolean) {
+        bypassPageLoaded = false
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) { dpiState = "Unsupported WebView"; paintDpiStatus(); return }
         dpiState = "Starting"; paintDpiStatus()
         val executor = java.util.concurrent.Executor { runOnUiThread(it) }

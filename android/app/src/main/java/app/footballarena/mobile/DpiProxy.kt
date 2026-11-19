@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** App-local CONNECT tunnel. TLS stays encrypted; no certificates or interception. */
-class DpiProxy(private val fragmentSize: Int, private val dns: SecureDns = SecureDns(), private val tlsRecords: Boolean = true, private val routing: AutoRouting? = null, private val connector: ((String) -> Socket)? = null) {
+class DpiProxy(private val fragmentSize: Int, private val dns: SecureDns = SecureDns(), private val tlsRecords: Boolean = true, private val routing: AutoRouting? = null, private val retryHandshake: Boolean = true, private val connector: ((String) -> Socket)? = null) {
     private class HostStats {
         val connections = AtomicInteger(); val sent = AtomicInteger(); val replies = AtomicInteger(); val bytes = AtomicLong(); val failures = AtomicInteger()
         @Volatile var error = "None"
@@ -82,17 +82,8 @@ class DpiProxy(private val fragmentSize: Int, private val dns: SecureDns = Secur
         val stats = hosts.getOrPut(host) { HostStats() }
         stats.connections.incrementAndGet()
         connections.incrementAndGet(); lastHost = host
-        var bypass = routing?.usesBypass(host) ?: true
-        val remote = connector?.invoke(host) ?: try { connectHost(host, bypass) } catch (e: Exception) {
-            if (bypass || routing?.retryWithBypass(host) != true) throw e
-            bypass = true
-            connectHost(host, true)
-        }
-        stats.route = if (bypass) "Encrypted DNS + fragmentation" else "Direct DNS, unchanged TLS"
-        sockets.add(remote)
-        try {
-            remote.tcpNoDelay = true
-            client.getOutputStream().write("HTTP/1.1 200 Connection Established\r\n\r\n".toByteArray())
+        // Accept CONNECT immediately so resolver work does not consume WebView's proxy handshake timeout.
+        client.getOutputStream().write("HTTP/1.1 200 Connection Established\r\n\r\n".toByteArray())
             // Read the initial TLS record as a unit, then split its bytes into writes.
             val inputTls = input
             val head = ByteArray(5)
@@ -104,45 +95,72 @@ class DpiProxy(private val fragmentSize: Int, private val dns: SecureDns = Secur
             val record = ByteArray(5 + size); head.copyInto(record)
             read = 5
             while (read < record.size) { val n = inputTls.read(record, read, record.size - read); if (n < 0) return; read += n }
-            val output = remote.getOutputStream()
-            if (!bypass) output.write(record)
-            var offset = if (!bypass) record.size else if (tlsRecords) 5 else 0
+        var bypass = routing?.usesBypass(host) ?: true
+        var records = tlsRecords
+        var compatibilityTried = false
+        var remote: Socket? = null
+        val first = ByteArray(16384)
+        var firstSize: Int
+        while (true) {
+            var attempt: Socket? = null
+            try {
+                attempt = connector?.invoke(host) ?: connectHost(host, bypass)
+                sockets.add(attempt); attempt.tcpNoDelay = true; attempt.soTimeout = 5000
+                val output = attempt.getOutputStream()
+                stats.route = if (!bypass) "Direct DNS, unchanged TLS" else if (records) "Encrypted DNS + TLS records" else "Encrypted DNS + TCP split"
+                if (!bypass) { output.write(record); output.flush() }
+                var offset = if (!bypass) record.size else if (records) 5 else 0
             while (offset < record.size) {
                 val n = minOf(fragmentSize, record.size - offset)
-                if (tlsRecords) output.write(byteArrayOf(head[0], head[1], head[2], (n shr 8).toByte(), n.toByte()))
+                if (records) output.write(byteArrayOf(head[0], head[1], head[2], (n shr 8).toByte(), n.toByte()))
                 output.write(record, offset, n); output.flush(); offset += n
                 if (offset < record.size) Thread.sleep(2)
             }
             if (bypass) { handshakes.incrementAndGet(); stats.sent.incrementAndGet() }
+                firstSize = attempt.getInputStream().read(first)
+                if (firstSize < 0) throw java.io.EOFException("Server closed before returning any TLS data")
+                // Retry only a ClientHello. Never replay application data or hide TLS alerts.
+                remote = attempt
+                break
+            } catch (e: Exception) {
+                attempt?.let { sockets.remove(it); it.close() }
+                if (!retryHandshake || client.isClosed || listener?.isClosed != false) throw e
+                if (!bypass && (routing?.retryWithBypass(host) == true || routing?.usesBypass(host) == true)) bypass = true
+                else if (bypass && !compatibilityTried) { records = !records; compatibilityTried = true }
+                else throw e
+            }
+        }
+        val upstreamSocket = requireNotNull(remote)
+        try {
+            serverReplies.incrementAndGet(); stats.replies.incrementAndGet()
+            receivedBytes.addAndGet(firstSize.toLong()); stats.bytes.addAndGet(firstSize.toLong())
+            client.getOutputStream().write(first, 0, firstSize)
+            val output = upstreamSocket.getOutputStream()
             client.soTimeout = 0
-            remote.soTimeout = 15000
+            upstreamSocket.soTimeout = 0
             val reported = AtomicBoolean()
             fun failure(message: String) {
                 if (!client.isClosed && listener?.isClosed == false && reported.compareAndSet(false, true)) {
                     recordFailure(client, message)
                 }
             }
+            if (first[0].toInt() == 21) failure("Server returned a TLS alert; forwarded unchanged")
             pool.execute {
-                var response = false
                 try {
                     val buffer = ByteArray(16384)
-                    val upstream = remote.getInputStream()
+                    val upstream = upstreamSocket.getInputStream()
                     while (true) {
                         val n = upstream.read(buffer)
-                        if (n < 0) { if (!response) failure("Server closed before returning any TLS data"); break }
-                        if (!response) {
-                            response = true; serverReplies.incrementAndGet(); stats.replies.incrementAndGet(); remote.soTimeout = 0
-                            if (buffer[0].toInt() == 21) failure("Server returned a TLS alert after fragmentation")
-                        }
+                        if (n < 0) break
                         receivedBytes.addAndGet(n.toLong())
                         stats.bytes.addAndGet(n.toLong())
                         client.getOutputStream().write(buffer, 0, n)
                     }
                 } catch (e: Exception) { failure("Server read: ${e.message}") }
-                finally { client.close(); remote.close() }
+                finally { client.close(); upstreamSocket.close() }
             }
-            try { input.copyTo(output) } catch (e: Exception) { if (!client.isClosed && !remote.isClosed) failure("Client relay: ${e.message}") }
-        } finally { sockets.remove(remote); remote.close() }
+            try { input.copyTo(output) } catch (e: Exception) { if (!client.isClosed && !upstreamSocket.isClosed) failure("Client relay: ${e.message}") }
+        } finally { sockets.remove(upstreamSocket); upstreamSocket.close() }
     }
 
     private fun connectHost(host: String, bypass: Boolean): Socket {
