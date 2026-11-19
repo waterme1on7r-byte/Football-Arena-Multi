@@ -18,7 +18,16 @@ object AppStrings {
     fun init(context: Context) {
         language = context.getSharedPreferences("football-arena", 0).getString("language", "tr") ?: "tr"
         val json = JSONObject(context.assets.open("i18n-tr.json").bufferedReader().use { it.readText() })
-        catalog = json.keys().asSequence().associateWith { json.getString(it) }
+        catalog = json.keys().asSequence().associateWith { json.getString(it) } + mapOf(
+            "Security warning" to "Güvenlik uyarısı",
+            "Certificate validation failed ({0}). Connection cancelled." to "Sertifika doğrulanamadı ({0}). Bağlantı iptal edildi.",
+            "Safe Browsing blocked this page. This is a security warning, not a DPI failure." to "Güvenli Tarama bu sayfayı engelledi. Bu bir güvenlik uyarısıdır, DPI bağlantı hatası değildir.",
+            "Page loaded with bypass" to "Seçili sayfa engel aşma ile yüklendi",
+            "Bypass ready; access not verified" to "Engel aşma hazır; seçili sayfaya erişim doğrulanmadı",
+            "Attempts" to "Bağlantı denemeleri",
+            "Encrypted DNS + TLS records" to "Şifreli DNS + TLS kayıt parçalama",
+            "Encrypted DNS + TCP split" to "Şifreli DNS + TCP parçalama"
+        )
         templates = catalog.filterKeys { it.contains("{0}") }.map { (key, value) -> Regex("^" + key.split(Regex("\\{\\d+\\}")).joinToString("(.+?)") { Regex.escape(it) } + "$") to value }
         pattern = Regex(catalog.keys.filter { !it.contains("{0}") }.sortedByDescending { it.length }.joinToString("|") { "(?<![A-Za-z])" + Regex.escape(it) + "(?![A-Za-z])" })
     }

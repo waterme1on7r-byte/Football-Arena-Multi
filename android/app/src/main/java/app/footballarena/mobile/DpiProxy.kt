@@ -13,18 +13,24 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** App-local CONNECT tunnel. TLS stays encrypted; no certificates or interception. */
-class DpiProxy(private val fragmentSize: Int, private val dns: SecureDns = SecureDns(), private val tlsRecords: Boolean = true, private val routing: AutoRouting? = null, private val retryHandshake: Boolean = true, private val connector: ((String) -> Socket)? = null) {
+class DpiProxy(private val fragmentSize: Int, private val dns: SecureDns = SecureDns(), private val tlsRecords: Boolean = true, private val routing: AutoRouting? = null, private val retryHandshake: Boolean = true, private val addressConnect: ((Socket, InetAddress) -> Unit)? = null, private val connector: ((String) -> Socket)? = null) {
     private class HostStats {
         val connections = AtomicInteger(); val sent = AtomicInteger(); val replies = AtomicInteger(); val bytes = AtomicLong(); val failures = AtomicInteger()
         @Volatile var error = "None"
         @Volatile var addresses = "Not resolved yet"
         @Volatile var route = "Waiting"
+        val attempts = java.util.concurrent.CopyOnWriteArrayList<String>()
     }
     private val hosts = ConcurrentHashMap<String, HostStats>()
+    private val alternativeDns = ConcurrentHashMap.newKeySet<String>()
     private val clientHosts = ConcurrentHashMap<Socket, String>()
+    private fun noteAttempt(stats: HostStats, message: String) = synchronized(stats.attempts) {
+        stats.attempts.add(message)
+        while (stats.attempts.size > 8) stats.attempts.removeAt(0)
+    }
     fun describeHost(host: String): String {
         val s = hosts[host] ?: return "$host: no tunneled requests yet"
-        return "$host\nRoute: ${s.route}\nAddresses: ${s.addresses}\nConnections: ${s.connections.get()} · Fragmented handshakes: ${s.sent.get()}\nServer replies: ${s.replies.get()} · Bytes: ${s.bytes.get()}\nErrors: ${s.failures.get()}\nLast host error: ${s.error}"
+        return "$host\nRoute: ${s.route}\nAddresses: ${s.addresses}\nConnections: ${s.connections.get()} · Fragmented handshakes: ${s.sent.get()}\nServer replies: ${s.replies.get()} · Bytes: ${s.bytes.get()}\nErrors: ${s.failures.get()}\nLast host error: ${s.error}\nAttempts:\n${s.attempts.takeLast(8).joinToString("\n")}"
     }
     private fun recordFailure(client: Socket, message: String) {
         val host = clientHosts[client] ?: "Unknown host"
@@ -108,6 +114,7 @@ class DpiProxy(private val fragmentSize: Int, private val dns: SecureDns = Secur
                 sockets.add(attempt); attempt.tcpNoDelay = true; attempt.soTimeout = 5000
                 val output = attempt.getOutputStream()
                 stats.route = if (!bypass) "Direct DNS, unchanged TLS" else if (records) "Encrypted DNS + TLS records" else "Encrypted DNS + TCP split"
+                noteAttempt(stats, "${stats.route} → ${attempt.inetAddress.hostAddress}")
                 if (!bypass) { output.write(record); output.flush() }
                 var offset = if (!bypass) record.size else if (records) 5 else 0
             while (offset < record.size) {
@@ -119,10 +126,19 @@ class DpiProxy(private val fragmentSize: Int, private val dns: SecureDns = Secur
             if (bypass) { handshakes.incrementAndGet(); stats.sent.incrementAndGet() }
                 firstSize = attempt.getInputStream().read(first)
                 if (firstSize < 0) throw java.io.EOFException("Server closed before returning any TLS data")
+                while (firstSize < 5) {
+                    val n = attempt.getInputStream().read(first, firstSize, 5 - firstSize)
+                    if (n < 0) throw java.io.EOFException("Incomplete TLS response header")
+                    firstSize += n
+                }
+                // Some block pages answer an HTTPS socket with plaintext HTTP. A reply alone is not TLS success.
+                val responseSize = ((first[3].toInt() and 255) shl 8) or (first[4].toInt() and 255)
+                require(first[0].toInt() in 20..23 && first[1].toInt() == 3 && first[2].toInt() in 0..4 && responseSize in 1..18432) { "Non-TLS response on HTTPS connection" }
                 // Retry only a ClientHello. Never replay application data or hide TLS alerts.
                 remote = attempt
                 break
             } catch (e: Exception) {
+                noteAttempt(stats, "Failed: ${e.message}")
                 attempt?.let { sockets.remove(it); it.close() }
                 if (!retryHandshake || client.isClosed || listener?.isClosed != false) throw e
                 if (!bypass && (routing?.retryWithBypass(host) == true || routing?.usesBypass(host) == true)) bypass = true
@@ -164,15 +180,23 @@ class DpiProxy(private val fragmentSize: Int, private val dns: SecureDns = Secur
     }
 
     private fun connectHost(host: String, bypass: Boolean): Socket {
-        val addresses = (if (bypass) dns.resolve(host) else InetAddress.getAllByName(host).toList()).sortedBy { it is java.net.Inet6Address }
+        var error: Exception? = null
+        val resolvers = if (!bypass) listOf(false) else if (host in alternativeDns) listOf(true, false) else listOf(false, true)
+        for (alternative in resolvers) {
+        val addresses = try { (if (bypass) dns.resolve(host, alternative) else InetAddress.getAllByName(host).toList()).sortedBy { it is java.net.Inet6Address } }
+            catch (e: Exception) { error = e; continue }
         hosts[host]?.addresses = addresses.joinToString { it.hostAddress ?: "?" }
         // Never let an untrusted page use the tunnel to reach local network services.
         val allowed = addresses.filter { !it.isAnyLocalAddress && !it.isLoopbackAddress && !it.isLinkLocalAddress && !it.isSiteLocalAddress && !it.isMulticastAddress }
-        var error: Exception? = null
         for (address in allowed.take(4)) {
             val socket = Socket(); sockets.add(socket)
-            try { socket.connect(InetSocketAddress(address, 443), 5000); return socket }
+            try {
+                if (addressConnect != null) addressConnect.invoke(socket, address) else socket.connect(InetSocketAddress(address, 443), 3000)
+                if (bypass && alternative) alternativeDns.add(host)
+                return socket
+            }
             catch (e: Exception) { error = e; socket.close(); sockets.remove(socket) }
+        }
         }
         throw java.io.IOException("No reachable public address for $host: ${error?.message ?: "DNS returned no public address"}")
     }

@@ -22,6 +22,30 @@ class NativeLayoutTest {
             android.os.ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand(command)).use { it.readBytes() }
         }
     }
+    @Test fun failedSelectedPageCannotInheritGreenDpiFromAnotherPage() {
+        instrumentation.targetContext.getSharedPreferences("football-arena", 0).edit().clear()
+            .putBoolean("languageChosen", true).putBoolean("restore", false).putString("dpiMode", "off").commit()
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                fun field(name: String) = MainActivity::class.java.getDeclaredField(name).apply { isAccessible = true }
+                val page = field("browser").get(activity) as WebView
+                field("dpiProxy").set(activity, DpiProxy(32))
+                field("dpiState").set(activity, "Always bypass")
+                @Suppress("UNCHECKED_CAST") val loaded = field("bypassPages").get(activity) as MutableSet<WebView>
+                loaded.add(page)
+                val paint = MainActivity::class.java.getDeclaredMethod("paintDpiStatus").apply { isAccessible = true }
+                paint.invoke(activity)
+                val button = field("dpiButton").get(activity) as Button
+                assertEquals(android.graphics.Color.rgb(67, 222, 143), button.currentTextColor)
+                MainActivity::class.java.getDeclaredMethod("pageFailed", WebView::class.java, String::class.java, String::class.java).apply { isAccessible = true }
+                    .invoke(activity, page, "https://test.invalid/", "Connection reset")
+                assertEquals(android.graphics.Color.rgb(246, 196, 81), button.currentTextColor)
+                val other = WebView(activity); loaded.add(other); paint.invoke(activity)
+                assertEquals("Another page must not turn the failed page green", android.graphics.Color.rgb(246, 196, 81), button.currentTextColor)
+                loaded.remove(other); other.destroy()
+            }
+        }
+    }
 
     @Test fun tabletControlsAndContentSizedPopups() {
         instrumentation.targetContext.getSharedPreferences("football-arena", 0).edit().clear()

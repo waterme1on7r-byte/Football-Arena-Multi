@@ -28,6 +28,18 @@ class SecureDnsTest {
         val dns = SecureDns { url -> if (url.startsWith("https://dns.google/")) throw java.io.IOException("Resolver blocked") else { assertTrue(url.startsWith("https://1.1.1.1/")); answer } }
         assertEquals("104.21.82.180", dns.resolve("ardaspor40.top").single().hostAddress)
     }
+    @Test fun alternateResolverDoesNotReusePrimaryCache() {
+        var queries = 0
+        val dns = SecureDns { url ->
+            queries++
+            if (url.startsWith("https://dns.google/")) answer
+            else """{"Status":0,"Answer":[{"type":1,"TTL":60,"data":"172.67.179.52"}]}"""
+        }
+        assertEquals("104.21.82.180", dns.resolve("test.example").single().hostAddress)
+        assertEquals("172.67.179.52", dns.resolve("test.example", true).single().hostAddress)
+        dns.resolve("test.example"); dns.resolve("test.example", true)
+        assertEquals(4, queries)
+    }
     @Test(expected = UnknownHostException::class) fun failsInsteadOfUsingSystemDns() {
         SecureDns { throw java.io.IOException("DoH unavailable") }.resolve("ardaspor40.top")
     }

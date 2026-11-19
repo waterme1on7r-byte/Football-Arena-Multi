@@ -45,7 +45,7 @@ class MainActivity : Activity() {
     private var mainPane = ""
     private var dpiProxy: DpiProxy? = null
     private var dpiState = "Off"
-    private var bypassPageLoaded = false
+    private val bypassPages = mutableSetOf<WebView>()
     private val loadErrors = mutableMapOf<WebView, String>()
     private val errorLabels = mutableMapOf<WebView, TextView>()
     private var lastPageError = "None"
@@ -228,11 +228,12 @@ class MainActivity : Activity() {
 
     private fun makePageClient(): WebViewClient = object : WebViewClient() {
                 override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+                    bypassPages.remove(view)
                     addresses[view]?.let { if (!it.hasFocus()) it.setText(url) }
                     loadErrors.remove(view); errorLabels[view]?.visibility = View.GONE
                     safetyWarnings.remove(view)
                     android.net.Uri.parse(url).host?.let { host -> viewSites[view]?.let { automaticRoutes.registerHost(it, host) } }
-                    if (view === browser) status.text = "Loading…"
+                    if (view === browser) { status.text = "Loading…"; paintDpiStatus() }
                 }
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     val u = request.url.toString()
@@ -253,28 +254,27 @@ class MainActivity : Activity() {
                     if (view === browser) {
                         selected = url
                         prefs.edit().putString("last", url).putString("lastSiteId", viewSites[view] ?: "").apply()
-                        status.text = if (loadErrors.containsKey(view)) "Page failed · see pane" else "Ready"
+                        status.text = if (view in safetyWarnings) "Security warning" else if (loadErrors.containsKey(view)) "Page failed · see pane" else "Ready"
                     }
-                    if (!loadErrors.containsKey(view) && view !in safetyWarnings && url.startsWith("https://") && dpiProxy != null && (routingMode() == "always" || android.net.Uri.parse(url).host?.let { automaticRoutes.usesBypass(it) } == true)) {
-                        bypassPageLoaded = true; paintDpiStatus()
-                    }
-                    runAutoSkip(view)
+                    if (!loadErrors.containsKey(view) && view !in safetyWarnings) runAutoSkip(view)
+                }
+                override fun onPageCommitVisible(view: WebView, url: String) {
+                    if (!loadErrors.containsKey(view) && view !in safetyWarnings && url.startsWith("https://") && dpiProxy != null && (routingMode() == "always" || android.net.Uri.parse(url).host?.let { automaticRoutes.usesBypass(it) } == true)) bypassPages.add(view)
+                    paintDpiStatus()
                 }
                 override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+                    if (view in safetyWarnings) return // Keep WebView's security interstitial visible.
                     val connectionFailure = error.errorCode in setOf(ERROR_HOST_LOOKUP, ERROR_CONNECT, ERROR_IO, ERROR_TIMEOUT) || error.description.toString() in setOf("net::ERR_CONNECTION_RESET", "net::ERR_EMPTY_RESPONSE", "net::ERR_CONNECTION_CLOSED")
                     if (request.isForMainFrame && request.method == "GET" && request.url.scheme == "https" && connectionFailure && view !in safetyWarnings && routingMode() == "auto" && dpiProxy != null) {
-                        val host = request.url.host
-                        if (host != null && automaticRoutes.retryWithBypass(host)) {
-                            status.text = "Retrying with bypass…"
-                            view.post { if (!isFinishing && viewSites.containsKey(view) && view !in safetyWarnings) view.loadUrl(request.url.toString()) }
-                            return
-                        }
+                        if (retrySecureRoute(view, request.url.toString())) return
                     }
                     if (request.isForMainFrame) pageFailed(view, request.url.toString(), "WebView ${error.errorCode}: ${error.description}")
                 }
                 override fun onSafeBrowsingHit(view: WebView, request: WebResourceRequest, threatType: Int, callback: SafeBrowsingResponse) {
                     safetyWarnings.add(view)
-                    loadErrors[view] = "Safe Browsing warning for ${request.url} (type $threatType). No bypass retry."
+                    bypassPages.remove(view); paintDpiStatus()
+                    loadErrors[view] = AppStrings.t("Safe Browsing blocked this page. This is a security warning, not a DPI failure.") + "\n${request.url} (type $threatType)"
+                    if (view === browser) status.text = "Security warning"
                     callback.showInterstitial(true)
                 }
                 override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
@@ -282,11 +282,25 @@ class MainActivity : Activity() {
                 }
                 override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: android.net.http.SslError) {
                     handler.cancel()
+                    // Reject the untrusted connection. A poisoned direct DNS answer can have a block-page certificate;
+                    // try a fresh encrypted-DNS connection once, with normal certificate validation still enabled.
+                    if ((view.url == error.url || addresses[view]?.text?.toString() == error.url) && retrySecureRoute(view, error.url)) return
                     pageFailed(view, error.url, "Certificate validation failed (${error.primaryError}). Connection cancelled.")
                 }
     }
+    private fun retrySecureRoute(view: WebView, url: String): Boolean {
+        if (routingMode() != "auto" || dpiProxy == null || view in safetyWarnings || !url.startsWith("https://")) return false
+        val host = android.net.Uri.parse(url).host ?: return false
+        viewSites[view]?.let { automaticRoutes.registerHost(it, host) }
+        if (!automaticRoutes.retryWithBypass(host)) return false
+        bypassPages.remove(view); paintDpiStatus()
+        if (view === browser) status.text = "Retrying with bypass…"
+        view.post { if (!isFinishing && viewSites.containsKey(view) && view !in safetyWarnings) view.loadUrl(url) }
+        return true
+    }
     private fun pageFailed(view: WebView, url: String, message: String) {
-        lastPageError = "$url\n$message"
+        bypassPages.remove(view); paintDpiStatus()
+        lastPageError = "$url\n${AppStrings.t(message)}"
         loadErrors[view] = lastPageError
         errorLabels[view]?.apply { text = "Couldn’t load this page\n\n$lastPageError\n\nUse the pane’s refresh button to retry."; visibility = View.VISIBLE }
         if (view === browser) status.text = "Page failed · see pane"
@@ -322,6 +336,7 @@ class MainActivity : Activity() {
             b.setOnLongClickListener { editSite(s, b); true }
             listBar.addView(b)
         }
+        if (::browser.isInitialized) paintDpiStatus()
     }
     private fun quickAccess(anchor: View? = null) {
         val quick = sites.filter { it.quick }
@@ -621,6 +636,7 @@ class MainActivity : Activity() {
         AppStrings.watch(controls); popup.showAsDropDown(anchor, 0, dp(6))
     }
     private fun paintDpiStatus() {
+        val bypassPageLoaded = ::browser.isInitialized && browser in bypassPages && !loadErrors.containsKey(browser) && browser !in safetyWarnings
         dpiButton.text = "● DPI"
         dpiButton.contentDescription = "DPI · $dpiState"
         dpiButton.setTextColor(when (dpiState) { "Automatic", "Always bypass" -> if (bypassPageLoaded) Color.rgb(67,222,143) else gold; "Failed" -> Color.rgb(255,115,115); "Starting" -> gold; else -> Color.rgb(134,150,168) })
@@ -628,7 +644,7 @@ class MainActivity : Activity() {
     }
     private fun dpiMenu() {
         val p = dpiProxy
-        val focusedHost = android.net.Uri.parse(pageSites[selectedKey]?.url ?: browser.url ?: "").host ?: "Unknown"
+        val focusedHost = android.net.Uri.parse(browser.url ?: pageSites[selectedKey]?.url ?: "").host ?: "Unknown"
         val focusedReport = p?.describeHost(focusedHost) ?: "Proxy is off"
         ArenaDialog.Builder(this).setTitle("DPI bypass · $dpiState")
             .setItems(arrayOf("Routing mode · ${routingMode()}", "Restart routing", "Option 1 · 8-byte fragments", "Option 2 · 32-byte fragments", "Option 3 · 64-byte fragments", "Diagnostics · ${p?.connections?.get() ?: 0} routed connections", if (prefs.getBoolean("dpiTlsRecords", true)) "Try compatibility mode · preserve TLS record" else "Use TLS record fragmentation")) { _, n ->
@@ -648,7 +664,7 @@ class MainActivity : Activity() {
             }.setNegativeButton("Cancel", null).show()
     }
     private fun updateDpi(reload: Boolean) {
-        bypassPageLoaded = false
+        bypassPages.clear()
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) { dpiState = "Unsupported WebView"; paintDpiStatus(); return }
         dpiState = "Starting"; paintDpiStatus()
         val executor = java.util.concurrent.Executor { runOnUiThread(it) }
@@ -765,6 +781,7 @@ class MainActivity : Activity() {
     }
     private fun closePane() {
         val page = pages.remove(selectedKey) ?: return
+        bypassPages.remove(page)
         errorLabels.remove(page); loadErrors.remove(page); historyButtons.remove(page)
         addresses.remove(page)
         viewSites.remove(page); safetyWarnings.remove(page)

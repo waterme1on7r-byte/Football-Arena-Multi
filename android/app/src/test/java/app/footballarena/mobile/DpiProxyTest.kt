@@ -8,11 +8,21 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 class DpiProxyTest {
-    private fun runTunnel(reply: Boolean, records: Boolean = true, automaticDirect: Boolean = false) {
+    private fun runTunnel(reply: Boolean, records: Boolean = true, automaticDirect: Boolean = false, alternateDns: Boolean = false) {
         val server = ServerSocket(0)
         val worker = Executors.newSingleThreadExecutor()
         val routes = if (automaticDirect) AutoRouting().apply { registerSite("test", "https://test.example/") } else null
-        val proxy = DpiProxy(8, tlsRecords = records, routing = routes, retryHandshake = false) { Socket("127.0.0.1", server.localPort) }
+        val attempted = mutableListOf<String>()
+        val dns = SecureDns { url ->
+            val ip = if (url.startsWith("https://dns.google/")) "104.21.82.180" else "172.67.179.52"
+            """{"Status":0,"Answer":[{"type":1,"TTL":60,"data":"$ip"}]}"""
+        }
+        val proxy = DpiProxy(8, dns = dns, tlsRecords = records, routing = routes, retryHandshake = false,
+            addressConnect = if (!alternateDns) null else { socket, address ->
+                attempted.add(address.hostAddress!!)
+                if (address.hostAddress == "104.21.82.180") throw java.io.IOException("Primary resolver address refused")
+                socket.connect(java.net.InetSocketAddress("127.0.0.1", server.localPort))
+            }, connector = if (alternateDns) null else { _ -> Socket("127.0.0.1", server.localPort) })
         val payload = ByteArray(16) { it.toByte() }
         val task = worker.submit {
             server.accept().use { peer ->
@@ -45,6 +55,7 @@ class DpiProxyTest {
             }
             task.get(6, TimeUnit.SECONDS)
             assertEquals(if (automaticDirect) 0 else 1, proxy.handshakes.get())
+            if (alternateDns) assertEquals(listOf("104.21.82.180", "172.67.179.52"), attempted)
             assertTrue(proxy.describeHost("test.example").contains("Connections: 1"))
             if (reply) {
                 assertEquals(1, proxy.serverReplies.get()); assertEquals(6L, proxy.receivedBytes.get())
@@ -60,8 +71,11 @@ class DpiProxyTest {
     @Test fun reportsUpstreamClosureBeforeReply() { runTunnel(false) }
     @Test fun compatibilityModePreservesOriginalTlsRecord() { runTunnel(true, false) }
     @Test fun automaticDirectDoesNotFragmentClientHandshake() { runTunnel(true, false, true) }
+    @Test fun refusedResolverAddressesTryAnIndependentEncryptedResolver() { runTunnel(true, alternateDns = true) }
 
-    @Test fun automaticRetriesResetBeforeServerHelloInsideTheSameTunnel() {
+    @Test fun automaticRetriesResetBeforeServerHelloInsideTheSameTunnel() { retryAfterBadFirstReply(null) }
+    @Test fun plaintextBlockPageTriggersBypassInsteadOfTlsSuccess() { retryAfterBadFirstReply("HTTP/1.1 451 Blocked\r\n\r\n".toByteArray()) }
+    private fun retryAfterBadFirstReply(firstReply: ByteArray?) {
         val server = ServerSocket(0)
         val worker = Executors.newSingleThreadExecutor()
         val routes = AutoRouting().apply { registerSite("test", "https://test.example/") }
@@ -78,6 +92,7 @@ class DpiProxyTest {
                         val chunk = ByteArray(input.readUnsignedShort()); input.readFully(chunk); bytes.write(chunk)
                     }
                     assertArrayEquals(payload, bytes.toByteArray())
+                    if (attempt == 0 && firstReply != null) peer.getOutputStream().write(firstReply)
                     if (attempt == 1) peer.getOutputStream().write(byteArrayOf(22, 3, 3, 0, 1, 0))
                 }
             }

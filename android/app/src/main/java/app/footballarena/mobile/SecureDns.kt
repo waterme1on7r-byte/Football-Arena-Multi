@@ -17,16 +17,17 @@ class SecureDns(private val fetch: (String) -> String = ::fetchDns) {
     @Volatile var lastResult = "No encrypted lookup yet"
         private set
 
-    fun resolve(rawHost: String): List<InetAddress> {
+    fun resolve(rawHost: String, alternative: Boolean = false): List<InetAddress> {
         val host = IDN.toASCII(rawHost.trimEnd('.')).lowercase()
         require(host.isNotBlank() && host.length <= 253) { "Invalid DNS name" }
-        cache[host]?.takeIf { it.expires > System.currentTimeMillis() }?.let {
+        val key = "$host:${if (alternative) "alternative" else "primary"}"
+        cache[key]?.takeIf { it.expires > System.currentTimeMillis() }?.let {
             lastResult = "$host → ${it.addresses.joinToString { a -> a.hostAddress ?: "?" }} (cached DoH)"
             return it.addresses
         }
         var last: Exception? = null
         // The IP-based second endpoint does not need Android DNS to bootstrap the resolver.
-        for (provider in listOf("https://dns.google/resolve", "https://1.1.1.1/dns-query")) {
+        for (provider in if (alternative) listOf("https://1.1.1.1/dns-query") else listOf("https://dns.google/resolve", "https://1.1.1.1/dns-query")) {
                 val addresses = mutableListOf<InetAddress>()
                 var ttl = 300
                 for (type in listOf(1, 28)) {
@@ -48,7 +49,7 @@ class SecureDns(private val fetch: (String) -> String = ::fetchDns) {
                 }
                 if (addresses.isNotEmpty()) {
                         val result = addresses.distinctBy { it.hostAddress }
-                        if (ttl > 0) cache[host] = Entry(result, System.currentTimeMillis() + ttl * 1000L)
+                        if (ttl > 0) cache[key] = Entry(result, System.currentTimeMillis() + ttl * 1000L)
                         lastResult = "$host → ${result.joinToString { it.hostAddress ?: "?" }} (${URL(provider).host}, HTTPS)"
                         return result
                 }
