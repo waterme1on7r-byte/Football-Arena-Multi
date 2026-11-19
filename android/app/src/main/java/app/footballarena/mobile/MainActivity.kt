@@ -323,7 +323,9 @@ class MainActivity : Activity() {
                     bypassPages.remove(view); paintDpiStatus()
                     loadErrors[view] = AppStrings.t("Safe Browsing blocked this page. This is a security warning, not a DPI failure.") + "\n${request.url} (type $threatType)"
                     if (view === browser) status.text = "Security warning"
-                    callback.showInterstitial(true)
+                    if (request.isForMainFrame && threatType == SAFE_BROWSING_THREAT_PHISHING) {
+                        safeBrowsingChoice(view, request.url.toString(), callback)
+                    } else callback.showInterstitial(true)
                 }
                 override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
                     if (request.isForMainFrame) pageFailed(view, request.url.toString(), "HTTP ${response.statusCode}: ${response.reasonPhrase}")
@@ -337,6 +339,16 @@ class MainActivity : Activity() {
                     if (view.url == error.url) pageFailed(view, error.url, "Certificate validation failed (${error.primaryError}). Connection cancelled.")
                     else resourceErrors[view] = "${error.url}\nCertificate validation failed (${error.primaryError})"
                 }
+    }
+    private fun safeBrowsingChoice(page: WebView, url: String, callback: SafeBrowsingResponse): ArenaDialog {
+        return ArenaDialog.Builder(this).setTitle("Deceptive site warning")
+            .setMessage(AppStrings.t("Android Safe Browsing flagged this address as deceptive. Continue only if you trust the site. Opening once does not mark it safe or disable protection for other pages.") + "\n\n$url")
+            .setCancelable(false)
+            .setNegativeButton("Back to safety") { _, _ -> callback.backToSafety(true) }
+            .setPositiveButton("Open once") { _, _ ->
+                loadErrors.remove(page); errorLabels[page]?.visibility = View.GONE
+                callback.proceed(true)
+            }.show()
     }
     private fun retrySecureRoute(view: WebView, url: String): Boolean {
         if (routingMode() != "auto" || dpiProxy == null || view in safetyWarnings || !url.startsWith("https://")) return false

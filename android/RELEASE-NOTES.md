@@ -1,4 +1,4 @@
-Android 1.8.23 preview
+Android 1.8.24 preview
 
 - Open user-initiated new-window links as yellow temporary tabs with a + save action. Saving preserves the existing page and player.
 - Expand advertising host/path rules to match desktop coverage. Leave player and media CDN URLs alone.
@@ -6,7 +6,7 @@ Android 1.8.23 preview
 - Apply ad-blocking and auto-skip switches without reloading matches. Remove overbroad cosmetic rules that could hide player containers.
 - Restyle Settings as a bounded dark modal with a vertical category sidebar, gold heading and divided content rows.
 - Change the Android footer to h o w l . d e v.
-- Preserve Safe Browsing interstitials when WebView reports ERROR_UNSAFE_RESOURCE. Security protection remains enabled; Inatbox's deceptive-content classification is not a DPI error.
+- For main pages flagged as deceptive, offer a themed Back to safety / Open once choice. Continuing requires an explicit tap for that warning; Safe Browsing remains enabled, with no permanent whitelist. Other threats retain Android's interstitial. Preserve security warnings when WebView reports ERROR_UNSAFE_RESOURCE.
 - Include embedded-frame HTTP, TLS and JavaScript errors and frame-host routing in diagnostics, instead of showing only Extra TV's parent connection. Subresource certificate failures no longer replace the whole parent page with an error overlay.
 
 Includes proxy/DNS unit tests and Android regression checks for persistent panes, temporary-tab saving, settings layout and embedded-frame auto-skip. Extra TV's live player needs tablet verification; successful parent traffic does not establish player success.

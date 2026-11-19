@@ -21,6 +21,10 @@ object AppStrings {
         catalog = json.keys().asSequence().associateWith { json.getString(it) } + mapOf(
             "Save site" to "Siteyi kaydet",
             "Embedded content error" to "Gömülü içerik hatası",
+            "Deceptive site warning" to "Yanıltıcı site uyarısı",
+            "Back to safety" to "Güvenli sayfaya dön",
+            "Open once" to "Bir kez aç",
+            "Android Safe Browsing flagged this address as deceptive. Continue only if you trust the site. Opening once does not mark it safe or disable protection for other pages." to "Android Güvenli Tarama bu adresi yanıltıcı olarak işaretledi. Yalnızca siteye güveniyorsanız devam edin. Bir kez açmak, siteyi güvenli olarak işaretlemez veya diğer sayfaların korumasını kapatmaz.",
             "Security warning" to "Güvenlik uyarısı",
             "Certificate validation failed ({0}). Connection cancelled." to "Sertifika doğrulanamadı ({0}). Bağlantı iptal edildi.",
             "Safe Browsing blocked this page. This is a security warning, not a DPI failure." to "Güvenli Tarama bu sayfayı engelledi. Bu bir güvenlik uyarısıdır, DPI bağlantı hatası değildir.",

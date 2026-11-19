@@ -19,6 +19,29 @@ class ContentFeaturesTest {
         instrumentation.targetContext.getSharedPreferences("football-arena", 0).edit().clear()
             .putBoolean("languageChosen", true).putBoolean("restore", false).putString("dpiMode", "off").commit()
     }
+    @Test fun flaggedPageOnlyContinuesAfterExplicitOpenOnceChoice() {
+        prepare()
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { a ->
+                var proceeded = 0; var wentBack = 0
+                val callback = object : SafeBrowsingResponse() {
+                    override fun proceed(report: Boolean) { proceeded++ }
+                    override fun backToSafety(report: Boolean) { wentBack++ }
+                    override fun showInterstitial(report: Boolean) { fail("Unexpected callback") }
+                }
+                val method = MainActivity::class.java.getDeclaredMethod("safeBrowsingChoice", WebView::class.java, String::class.java, SafeBrowsingResponse::class.java).apply { isAccessible = true }
+                val page = field("browser").get(a) as WebView
+                val first = method.invoke(a, page, "https://flagged.example/", callback) as ArenaDialog
+                assertEquals(0, proceeded)
+                first.getButton(-2).performClick()
+                assertEquals(1, wentBack); assertEquals(0, proceeded)
+                val second = method.invoke(a, page, "https://flagged.example/", callback) as ArenaDialog
+                assertEquals(0, proceeded)
+                second.getButton(-1).performClick()
+                assertEquals(1, proceeded)
+            }
+        }
+    }
     @Test fun settingsUsesBoundedModalAndVerticalSidebar() {
         prepare()
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
