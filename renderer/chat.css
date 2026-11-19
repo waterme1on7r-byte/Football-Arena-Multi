@@ -17,7 +17,7 @@ header button{border:0;background:transparent;color:var(--mute);padding:5px 9px;
 header button:hover{color:var(--text);background:rgba(255,255,255,.08)}
 .avatarEditBtn{position:relative;display:grid;place-items:center;width:34px;height:32px;padding:3px!important}
 .avatarEditBtn img{width:24px;height:24px;border-radius:50%;object-fit:cover;background:#263347}
-.avatarEditBtn span{position:absolute;right:1px;bottom:0;width:14px;height:14px;border-radius:50%;background:var(--panel);color:var(--gold2);font-size:10px;line-height:14px;text-align:center}
+#profileCancel{margin-top:10px;width:100%;padding:8px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--mute)}
 #status,#muteBar{flex:none;padding:6px 14px;font-size:12.5px;color:var(--mute);background:rgba(255,255,255,.03);border-bottom:1px solid var(--line)}
 #muteBar{display:flex;justify-content:space-between;align-items:center}
 #muteBar[hidden],#status[hidden]{display:none}

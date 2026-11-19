@@ -13,8 +13,7 @@
   <header>
     <div class="ttl"><span class="live"></span><b>CHAT</b><span id="online"></span></div>
     <button id="admBtn" title="Moderation" aria-label="Moderation" hidden>🛡</button>
-    <button id="avatarBtn" class="avatarEditBtn" title="Edit avatar" aria-label="Edit avatar"><img id="headerAvatar" alt=""><span>✎</span></button>
-    <button id="nickBtn" title="Change nickname" aria-label="Change nickname">👤</button>
+    <button id="avatarBtn" class="avatarEditBtn" title="Edit profile" aria-label="Edit profile"><img id="headerAvatar" alt=""></button>
     <button id="min" title="Minimize" aria-label="Minimize">—</button>
   </header>
   <div id="status" hidden></div>
@@ -29,13 +28,14 @@
   <div id="emoji" hidden></div>
   <div id="nick">
     <div class="card">
-      <h3>Join the chat</h3>
-      <p>Pick a nickname. Everyone watching can see it.</p>
+      <h3 id="profileTitle">Join the chat</h3>
+      <p id="profileDescription">Pick a nickname. Everyone watching can see it.</p>
       <div class="joinAvatar"><img id="joinAvatarPreview" alt=""><button id="joinAvatarBtn" type="button">Choose avatar</button></div>
       <input id="nickIn" maxlength="20" placeholder="Nickname" aria-label="Nickname">
       <input id="pwIn" type="password" maxlength="100" placeholder="Password" aria-label="Password" autocomplete="off" hidden>
       <div class="err" id="nickErr"></div>
       <button id="nickOk" class="primary">Join</button>
+      <button id="profileCancel" type="button" hidden>Cancel</button>
     </div>
   </div>
   <div id="avatarPicker" hidden>

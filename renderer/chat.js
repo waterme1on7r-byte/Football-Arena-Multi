@@ -147,7 +147,7 @@ function setState(s) {
   st.hidden = s === "up"; st.textContent = s === "connecting" ? "Connecting…" : "Connection lost. Reconnecting…";
   drawOnline();
 }
-const timeText = ts => new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+const timeText = ts => new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 
 function render() {
   const stick = list.scrollHeight - list.scrollTop - list.clientHeight < 70;
@@ -354,7 +354,7 @@ function chooseAvatar(id) {
 }
 $("#send").addEventListener("submit", e => { e.preventDefault(); sendMessage(); });
 $("#min").onclick = () => hostApi.minimize();
-$("#avatarBtn").onclick = openAvatarPicker;
+$("#avatarBtn").onclick = () => askNick(false);
 $("#joinAvatarBtn").onclick = openAvatarPicker;
 $("#avatarClose").onclick = () => { $("#avatarPicker").hidden = true; };
 document.addEventListener("keydown", e => { if (e.key === "Escape") { if (!$("#cfm").hidden) closeCfm(false); else if (!$("#avatarPicker").hidden) $("#avatarPicker").hidden = true; else if (!$("#adm").hidden) $("#adm").hidden = true; else if (!$("#emoji").hidden) $("#emoji").hidden = true; else hostApi.minimize(); } });
@@ -368,6 +368,11 @@ document.addEventListener("click", e => { if (!e.target.closest("#emoji")) $("#e
 /* nickname (WTMLJR asks for the admin password) */
 const err = t => { $("#nickErr").textContent = t || ""; };
 function askNick(needPw) {
+  const editing = !!nick && !needPw;
+  $("#profileTitle").textContent = editing ? "Edit profile" : "Join the chat";
+  $("#profileDescription").textContent = editing ? "Change your avatar and nickname." : "Pick a nickname. Everyone watching can see it.";
+  $("#nickOk").textContent = editing ? "Save" : "Join";
+  $("#profileCancel").hidden = !editing;
   $("#nick").hidden = false; $("#nickIn").value = nick; err(needPw ? "This name is protected. Enter the password." : "");
   $("#pwIn").value = ""; $("#pwIn").hidden = !needPw;
   (needPw ? $("#pwIn") : $("#nickIn")).focus(); if (!needPw) $("#nickIn").select();
@@ -395,7 +400,7 @@ async function saveNick() {
 $("#nickOk").onclick = saveNick;
 $("#nickIn").addEventListener("keydown", e => { if (e.key === "Enter") saveNick(); });
 $("#pwIn").addEventListener("keydown", e => { if (e.key === "Enter") saveNick(); });
-$("#nickBtn").onclick = () => askNick(false);
+$("#profileCancel").onclick = () => { $("#nick").hidden = true; $("#pwIn").value = ""; err(""); $("#inp").focus(); };
 $("#admBtn").onclick = () => { $("#adm").hidden = !$("#adm").hidden; drawAdm(); };
 $("#admClose").onclick = () => { $("#adm").hidden = true; };
 
@@ -423,7 +428,7 @@ hostApi.onVisible(v => { isOpen = v; if (v) { unread = 0; hostApi.unread(0); lis
   await acceptMod(store.get("mod", null));
   drawAvatarControls();
   render(); drawBanState();
-  if (!nick) askNick(false); else if (reserved(nick)) askNick(true); else $("#inp").focus();
+  if (!nick) askNick(false); else if (reserved(nick)) askNick(true); else { $("#nick").hidden = true; $("#inp").focus(); }
   if (nick) hostApi.nick(nick);   // let Settings show the nickname
   mq = new Mqtt(servers, {
     state: setState,

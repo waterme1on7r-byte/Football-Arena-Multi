@@ -19,6 +19,15 @@ assert.equal(context.FA_I18N.t('Version 1.8.12 is ready.'),'1.8.12 sürümü haz
 assert.equal(context.FA_I18N.t('Too many tries. Wait 30 s.'),'Çok fazla deneme. 30 saniye bekleyin.');
 assert.equal(context.FA_I18N.t('https://example.com/app'),'https://example.com/app');
 assert.equal(context.FA_I18N.t('Football Arena'),'Football Arena');
+assert.equal(context.FA_I18N.t('Pick a site'),'Bir site seçin');
+assert.equal(context.FA_I18N.t('Tap a site above to play it here. Open several to watch side by side.'),'Burada izlemek için yukarıdan bir site seçin. Yan yana izlemek için birden fazla site açın.');
+assert.equal(context.FA_I18N.t('Log folder'),'Log klasörü');
+assert.equal(context.FA_I18N.t('Open log folder'),'Log klasörünü aç');
+assert.equal(context.FA_I18N.t('Clear cache on exit'),'Kapanışta önbelleği temizle');
+assert.equal(context.FA_I18N.t('Passcode'),'Giriş kilidi kodu');
+assert.equal(context.FA_I18N.t('Only the focused pane plays sound'),'Yalnızca aktif bölme ses çalsın');
+assert.equal(context.FA_I18N.t('No messages yet. Say hi to everyone watching 👋'),'Henüz mesaj yok. Merhaba deyin 👋');
+assert.equal(context.FA_I18N.t('Edit profile'),'Profili düzenle');
 const native = JSON.parse(fs.readFileSync('android/app/src/main/assets/i18n-tr.json','utf8'));
 assert.deepEqual(JSON.parse(JSON.stringify(context.FA_TRANSLATIONS)),native);
 console.log('Localization and settings migration checks passed');
