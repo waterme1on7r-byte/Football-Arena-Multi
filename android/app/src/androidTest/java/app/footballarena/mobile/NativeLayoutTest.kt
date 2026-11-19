@@ -40,7 +40,18 @@ class NativeLayoutTest {
                 val controls = children(activity.window.decorView).filterIsInstance<Button>().filter { it.contentDescription?.toString() in listOf("Toggle main pane", "Ana bölmeyi değiştir") }
                 assertEquals(4, controls.size)
                 val density = activity.resources.displayMetrics.density
-                controls.forEach { assertTrue("Pane icons must stay compact", it.width <= 48 * density); assertTrue("Every pane control must be on screen", it.getGlobalVisibleRect(android.graphics.Rect())) }
+                controls.forEach { button ->
+                    assertTrue("Pane icons must stay compact", button.width <= 48 * density)
+                    assertTrue("Every pane control must be on screen", button.getGlobalVisibleRect(android.graphics.Rect()))
+                    val image = android.graphics.Bitmap.createBitmap(button.width, button.height, android.graphics.Bitmap.Config.ARGB_8888)
+                    button.draw(android.graphics.Canvas(image))
+                    var ink = 0
+                    for (x in button.width / 4 until button.width * 3 / 4) for (y in button.height / 4 until button.height * 3 / 4) {
+                        if (image.getPixel(x, y) == android.graphics.Color.rgb(11, 15, 20)) ink++
+                    }
+                    image.recycle()
+                    assertTrue("Main-pane icon must be visible on its gold button", ink > 5)
+                }
             }
             screenshot("tablet-four-panes")
             var dialog: ArenaDialog? = null

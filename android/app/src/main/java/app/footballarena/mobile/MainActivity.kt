@@ -447,21 +447,14 @@ class MainActivity : Activity() {
 
     private fun button(label: String, primary: Boolean = false, action: (View) -> Unit): Button {
         val icon = mapOf("‹" to "back", "›" to "forward", "×" to "close", "↻" to "refresh", "▣" to "main", "♫" to "sound", "⏻" to "power")[label]
-        return object : Button(this) {
-            private val glyph = icon?.let { ControlIcon(it, if (primary) bg else this@MainActivity.text, dp(20)) }
-            override fun onDraw(canvas: android.graphics.Canvas) {
-                super.onDraw(canvas)
-                glyph?.let { drawable ->
-                    val size = dp(20); val left = (width - size) / 2; val top = (height - size) / 2
-                    drawable.alpha = if (isEnabled) 255 else 80; drawable.setBounds(left, top, left + size, top + size); drawable.draw(canvas)
-                }
-            }
-        }.apply {
+        return Button(this).apply {
         text = if (icon == null) label else ""; isAllCaps = false; textSize = if (leanback) 17f else 14f; setTextColor(if (primary) bg else this@MainActivity.text)
         gravity = Gravity.CENTER; setSingleLine(true); ellipsize = android.text.TextUtils.TruncateAt.END
         background = controlBackground(primary)
         if (icon != null) {
             contentDescription = mapOf("back" to "Back", "forward" to "Forward", "close" to "Close", "refresh" to "Refresh", "main" to "Main pane", "sound" to "Sound", "power" to "Turn off")[icon]
+            foreground = ControlIcon(icon, if (primary) bg else this@MainActivity.text, dp(20))
+            foregroundGravity = Gravity.CENTER
         }
         minHeight = 0; minimumHeight = 0; minWidth = 0; minimumWidth = 0
         isFocusable = true; setOnClickListener { action(it) }; setPadding(dp(10), 0, dp(10), 0)
