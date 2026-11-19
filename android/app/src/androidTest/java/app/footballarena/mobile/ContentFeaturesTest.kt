@@ -60,7 +60,9 @@ class ContentFeaturesTest {
                 save.getButton(-1).performClick()
                 assertSame(second, pages[key]); assertTrue(pages.containsValue(first))
                 val persisted = a.getSharedPreferences("football-arena", 0).getString("sites", "")!!
-                assertTrue(persisted.contains("two.example/player")); assertTrue(persisted.contains(key))
+                val saved = org.json.JSONArray(persisted)
+                val site = (0 until saved.length()).map { saved.getJSONObject(it) }.single { it.getString("id") == key }
+                assertEquals("https://two.example/player", site.getString("url"))
             }
         }
     }
