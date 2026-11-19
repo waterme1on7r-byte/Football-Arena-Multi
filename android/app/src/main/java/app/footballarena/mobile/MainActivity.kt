@@ -195,7 +195,7 @@ class MainActivity : Activity() {
         val wide = resources.configuration.screenWidthDp >= 900
         val toolbar = LinearLayout(this).apply {
             orientation = if (wide) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_VERTICAL; setPadding(dp(14), dp(10), dp(14), dp(12))
+            gravity = Gravity.CENTER_VERTICAL; setPadding(dp(14), dp(8), dp(14), dp(10))
             background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TL_BR, intArrayOf(Color.rgb(38,33,24), bg, bg))
         }
         val brand = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, dp(16), 0) }
@@ -205,7 +205,7 @@ class MainActivity : Activity() {
                 super.onSizeChanged(w,h,oldw,oldh)
                 paint.shader = android.graphics.LinearGradient(0f, 0f, w.toFloat(), 0f, intArrayOf(Color.rgb(255,227,154), gold, Color.WHITE), floatArrayOf(0f,.55f,1f), android.graphics.Shader.TileMode.CLAMP)
             }
-        }.apply { tag = "user-content"; text = "Football Arena"; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(10), 0, 0, 0); setTextColor(gold); textSize = if (wide) 44f else 34f; typeface = brandTypeface; includeFontPadding = false; letterSpacing = .03f; setSingleLine(true) }
+        }.apply { tag = "user-content"; text = "Football Arena"; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(10), 0, 0, 0); setTextColor(gold); textSize = if (wide) 40f else 32f; typeface = brandTypeface; includeFontPadding = false; letterSpacing = .03f; setSingleLine(true) }
         brand.addView(title); toolbar.addView(brand)
         val tools = LinearLayout(this).apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL }
         dpiButton = headerButton("● DPI") { dpiQuickMenu(it) }
@@ -372,17 +372,17 @@ class MainActivity : Activity() {
                 background = tabBackground(isOpen, s.id == selectedKey); setAddStatesFromChildren(true); isSelected = isOpen
             }
             val name = headerButton(s.name) { openSite(s) }.apply {
-                setTextColor(if (isOpen) gold else this@MainActivity.text); typeface = Typeface.DEFAULT_BOLD; maxWidth = dp(180)
-                setBackgroundColor(Color.TRANSPARENT); setPadding(dp(2), 0, dp(6), 0)
-                setCompoundDrawablesWithIntrinsicBounds(SiteInitialBadge(s.name, dp(20)), null, null, null); compoundDrawablePadding = dp(7)
+                setTextColor(if (isOpen) gold else this@MainActivity.text); textSize = if (leanback) 14f else 11f; typeface = Typeface.DEFAULT_BOLD; maxWidth = dp(180)
+                setBackgroundColor(Color.TRANSPARENT); setPadding(dp(2), 0, dp(4), 0)
+                setCompoundDrawablesWithIntrinsicBounds(SiteInitialBadge(s.name, dp(18)), null, null, null); compoundDrawablePadding = dp(5)
                 contentDescription = "${s.name}, ${if (isOpen) "open" else "closed"}${if (s.id == selectedKey) ", focused" else ""}"
                 setOnLongClickListener { editSite(s, chip); true }
             }
             chip.addView(name, LinearLayout.LayoutParams(-2, dp(if (leanback) 44 else 36)))
             chip.addView(headerButton("⋮") { editSite(s, it) }.apply {
                 contentDescription = AppStrings.t("Options") + " · " + s.name; textSize = 18f; setTextColor(Color.rgb(134,150,168)); setBackgroundColor(Color.TRANSPARENT); setPadding(0,0,0,0)
-            }, LinearLayout.LayoutParams(dp(22), dp(if (leanback) 44 else 36)))
-            listBar.addView(chip, LinearLayout.LayoutParams(-2, dp(if (leanback) 46 else 38)).apply { marginEnd = dp(7) })
+            }, LinearLayout.LayoutParams(dp(18), dp(if (leanback) 44 else 36)))
+            listBar.addView(chip, LinearLayout.LayoutParams(-2, dp(if (leanback) 46 else 38)).apply { marginEnd = dp(5) })
         }
         if (::quickCount.isInitialized) {
             val count = sites.count { it.quick }; quickCount.text = count.toString()

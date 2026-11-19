@@ -23,6 +23,7 @@ class SiteInitialBadge(name: String, private val size: Int) : Drawable() {
     override fun draw(canvas: Canvas) {
         val box = RectF(bounds); val radius = box.width() / 2
         paint.style = Paint.Style.FILL
+        paint.alpha = 255
         paint.shader = LinearGradient(box.left, box.top, box.right, box.bottom, hsl(hue,.85f,.66f), hsl(hue+45,.75f,.5f), Shader.TileMode.CLAMP)
         canvas.drawCircle(box.centerX(), box.centerY(), radius, paint)
         paint.shader = null; paint.color = Color.rgb(11,15,20); paint.typeface = Typeface.DEFAULT_BOLD; paint.textSize = box.height() * .53f; paint.textAlign = Paint.Align.CENTER
