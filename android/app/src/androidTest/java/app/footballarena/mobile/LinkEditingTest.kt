@@ -32,7 +32,8 @@ class LinkEditingTest {
                 val peers=sites.filter {!(it.javaClass.getDeclaredMethod("getQuick").apply {isAccessible=true}.invoke(it) as Boolean)}
                 val first=id(peers[0]);val second=id(peers[1])
                 val move=MainActivity::class.java.getDeclaredMethod("moveSite",String::class.java,Int::class.javaPrimitiveType).apply {isAccessible=true}
-                move.invoke(a,first,-1);assertEquals(first,id(sites.first {id(it)==first}))
+                val before=sites.map(::id)
+                move.invoke(a,first,-1);assertEquals(before,sites.map(::id))
                 move.invoke(a,first,1)
                 val visible=sites.filter {it in peers}.map(::id)
                 assertEquals(listOf(second,first),visible.take(2))

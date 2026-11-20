@@ -20,6 +20,7 @@ internal class PinDialog(
     private val verify:(String)->Boolean,
     private val confirmed:(String?)->Unit
 ):Dialog(context) {
+    private val hostActivity=context as? Activity
     enum class Mode { UNLOCK, SET, CHANGE, REMOVE }
     private val fields=when(mode){
         Mode.SET->listOf("New password:","Re-enter new password:")
@@ -113,7 +114,7 @@ internal class PinDialog(
         window?.setBackgroundDrawableResource(android.R.color.transparent)
         val compact=context.resources.displayMetrics.heightPixels/context.resources.displayMetrics.density<520 && context.resources.configuration.screenWidthDp>=500
         window?.setLayout(minOf(dp(if(compact)680 else 420),context.resources.displayMetrics.widthPixels-dp(28)),minOf(dp(if(compact)330 else 625),context.resources.displayMetrics.heightPixels-dp(32)))
-        val token=(context as? Activity)?.window?.decorView?.windowToken
+        val token=hostActivity?.window?.decorView?.windowToken
         (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(token,0)
         if(context.packageManager.hasSystemFeature("android.software.leanback"))keys.first().requestFocus()
     }

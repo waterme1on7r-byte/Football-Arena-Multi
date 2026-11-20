@@ -576,17 +576,17 @@ class MainActivity : Activity() {
         val name=siteInput(box,"Name",android.net.Uri.parse(url).host?:url,"saved-site-name")
         val address=siteInput(box,"URL",url,"saved-site-url",true)
         val dialog=ArenaDialog.Builder(this).setTitle("Save site").setMessage("Save this temporary tab to your site list.").setView(box).setNegativeButton("Cancel",null).setPositiveButton("Save",null).create()
-        dialog.setOnShowListener {dialog.getButton(-1).setOnClickListener {
+        dialog.getButton(-1).setOnClickListener {
             val n=name.text.toString().trim();val u=validSiteUrl(address.text.toString())
-            if(n.isBlank()){name.error=AppStrings.t("Enter a site name");return@setOnClickListener}
-            if(u==null){address.error=AppStrings.t("Enter a valid HTTP or HTTPS address");return@setOnClickListener}
+            if(n.isBlank()){siteInputError(name,"Enter a site name");return@setOnClickListener}
+            if(u==null){siteInputError(address,"Enter a valid HTTP or HTTPS address");return@setOnClickListener}
             if(!pages.containsKey(key)){dialog.dismiss();return@setOnClickListener}
             val site=Site(key,n.take(80),u,custom=true)
             sites.add(site);pageSites[key]=site
             automaticRoutes.registerSite(key,u)
             saveSites();dialog.dismiss()
             // Saving/editing metadata must not navigate or recreate a playing temporary pane.
-        }}
+        }
         dialog.show();return dialog
     }
     private fun siteInput(box:LinearLayout,label:String,value:String,fieldTag:String,uri:Boolean=false):EditText {
@@ -597,7 +597,17 @@ class MainActivity : Activity() {
             background=ArenaStyle.button(this@MainActivity);setPadding(dp(12),dp(10),dp(12),dp(10));contentDescription=AppStrings.t(label)
         }
         box.addView(field,LinearLayout.LayoutParams(-1,dp(46)).apply {bottomMargin=dp(13)})
+        val error=TextView(this).apply {tag="$fieldTag-error";textSize=12f;setTextColor(ArenaStyle.red);visibility=View.GONE;setPadding(0,0,0,dp(10));accessibilityLiveRegion=View.ACCESSIBILITY_LIVE_REGION_POLITE}
+        box.addView(error)
+        field.addTextChangedListener(object:android.text.TextWatcher{
+            override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int){}
+            override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){error.visibility=View.GONE}
+            override fun afterTextChanged(s:android.text.Editable?){}
+        })
         return field
+    }
+    private fun siteInputError(field:EditText,message:String){
+        (field.parent as View).findViewWithTag<TextView>("${field.tag}-error").apply {text=AppStrings.t(message);visibility=View.VISIBLE}
     }
     private fun validSiteUrl(raw:String):String? {
         val value=raw.trim().let {if(it.contains("://"))it else "https://$it"}
@@ -733,14 +743,14 @@ class MainActivity : Activity() {
         val name=siteInput(box,"Name",old?.name?:"","site-name")
         val url=siteInput(box,"URL",old?.url?:"https://","site-url",true)
         val dialog=ArenaDialog.Builder(this).setTitle(if (old == null) "Add site" else "Edit site").setView(box).setNegativeButton("Cancel", null).setPositiveButton("Save",null).create()
-        dialog.setOnShowListener {dialog.getButton(-1).setOnClickListener {
+        dialog.getButton(-1).setOnClickListener {
             val n = name.text.toString().trim();val u=validSiteUrl(url.text.toString())
-            if(n.isBlank()){name.error=AppStrings.t("Enter a site name");return@setOnClickListener}
-            if(u==null){url.error=AppStrings.t("Enter a valid HTTP or HTTPS address");return@setOnClickListener}
+            if(n.isBlank()){siteInputError(name,"Enter a site name");return@setOnClickListener}
+            if(u==null){siteInputError(url,"Enter a valid HTTP or HTTPS address");return@setOnClickListener}
             if (old == null) sites.add(Site("custom-${System.currentTimeMillis()}", n.take(40), u, custom = true))
             else { val i = sites.indexOf(old); if (i >= 0) sites[i] = old.copy(name = n.take(40), url = u, custom = true) }
             saveSites();dialog.dismiss()
-        }};dialog.show()
+        };dialog.show()
     }
 
     private fun refreshLinks(manual: Boolean) {
