@@ -16,8 +16,8 @@ android {
         applicationId 'app.footballarena.mobile'
         minSdk 23
         targetSdk 35
-        versionCode 1838
-        versionName '1.8.38-android-preview'
+        versionCode 1839
+        versionName '1.8.39-android-preview'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
 }

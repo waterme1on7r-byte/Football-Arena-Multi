@@ -1,4 +1,4 @@
-Android 1.8.38 preview
+Android 1.8.39 preview
 
 - Apply the selected Desktop classic design to Android settings, app dialogs and link menus: gold headings, blue switches, divided rows, consistent title bars and compact actions.
 - Replace passcode text inputs with an app-themed four-digit keypad at startup and in settings. Creating a code requires confirmation; changing it requires the current code and confirmation of the new code. Retain the failed-attempt cooldown.

@@ -19,7 +19,11 @@ internal object ArenaStyle {
     val green = Color.rgb(118,215,171)
     val red = Color.rgb(255,170,164)
     fun dp(context:Context,n:Int)=(n*context.resources.displayMetrics.density).toInt()
-    fun titleFont(context:Context):Typeface = Typeface.create(Typeface.createFromAsset(context.assets,"fonts/big_shoulders_display.ttf"),Typeface.BOLD)
+    private var headingFont:Typeface?=null
+    fun titleFont(context:Context):Typeface = headingFont?:runCatching {
+        if(android.os.Build.VERSION.SDK_INT>=26) Typeface.Builder(context.assets,"fonts/big_shoulders_display.ttf").setFontVariationSettings("'wght' 700").build()
+        else Typeface.create("sans-serif-condensed",Typeface.BOLD)
+    }.getOrElse {Typeface.create("sans-serif-condensed",Typeface.BOLD)}.also {headingFont=it}
     fun surface(context:Context,radius:Int=16)=GradientDrawable(GradientDrawable.Orientation.TL_BR,intArrayOf(Color.rgb(25,37,50),Color.rgb(16,24,33))).apply {
         cornerRadius=dp(context,radius).toFloat();setStroke(dp(context,1),line)
     }

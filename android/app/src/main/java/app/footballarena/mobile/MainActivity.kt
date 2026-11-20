@@ -982,6 +982,9 @@ class MainActivity : Activity() {
             if (key != null) row.addView(Switch(this).apply {
                 contentDescription = label; isChecked = if (key == "dpi") routingMode() != "off" else prefs.getBoolean(key, default)
                 if (key == "dpi") { dpiSwitch = this; tag = "dpi-settings-switch" }
+                switchMinWidth=dp(42);splitTrack=false
+                thumbDrawable=android.graphics.drawable.GradientDrawable().apply {shape=android.graphics.drawable.GradientDrawable.OVAL;setColor(Color.WHITE);setSize(dp(20),dp(20))}
+                trackDrawable=android.graphics.drawable.GradientDrawable().apply {setColor(ArenaStyle.blue);cornerRadius=dp(12).toFloat();setSize(dp(40),dp(22))}
                 thumbTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
                 trackTintList = android.content.res.ColorStateList(arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()), intArrayOf(ArenaStyle.blue, Color.rgb(57,68,82)))
                 setOnCheckedChangeListener { _, on ->
