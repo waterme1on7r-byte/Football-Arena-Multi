@@ -73,6 +73,25 @@ class AutoSkipIntegrationTest {
             awaitJs(scenario,page,"getComputedStyle(document.querySelector('.banner-container.fullwidth')).display!=='none'&&window.started===true&&window.token===window.original")
         }
     }
+    @Test fun inatPageSkinIsHiddenAndRestoredWithoutTouchingThePlayerOrSharedCdnLogo() {
+        prepare()
+        val root="""<html><body><img id="logo" src="https://media.example/logo.png" width="80" height="30">
+            <div class="pageskin-mobile-wrapper"><a href="https://promo.invalid"><img width="300" height="400"></a></div>
+            <div class="pageskin-wrapper"><a href="https://promo.invalid">Sponsored skin</a></div>
+            <iframe id="customIframe" src="/player" width="500" height="300"></iframe><script>window.token=Math.random();window.original=window.token;</script></body></html>"""
+        ActivityScenario.launch(MainActivity::class.java).use {scenario->
+            lateinit var page:WebView
+            scenario.onActivity {a->
+                page=create(a){if(it.url.path=="/player")"<html><body>Match player</body></html>" else root}
+                @Suppress("UNCHECKED_CAST")val owners=MainActivity::class.java.getDeclaredField("viewSites").apply {isAccessible=true}.get(a) as MutableMap<WebView,String>
+                owners[page]="inatbox"
+                MainActivity::class.java.getDeclaredMethod("loadPage",WebView::class.java,String::class.java).apply {isAccessible=true}.invoke(a,page,"https://rotated.example/")
+            }
+            awaitJs(scenario,page,"Array.from(document.querySelectorAll('.pageskin-wrapper,.pageskin-mobile-wrapper')).every(e=>getComputedStyle(e).display==='none')&&logo.getBoundingClientRect().height===30&&customIframe.getBoundingClientRect().height>0&&window.token===window.original")
+            scenario.onActivity {a->a.getSharedPreferences("football-arena",0).edit().putBoolean("adblock",false).commit();MainActivity::class.java.getDeclaredMethod("runAutoSkip",WebView::class.java).apply {isAccessible=true}.invoke(a,page)}
+            awaitJs(scenario,page,"getComputedStyle(document.querySelector('.pageskin-mobile-wrapper')).display!=='none'&&customIframe.getBoundingClientRect().height>0&&window.token===window.original")
+        }
+    }
     @Test fun observedArdaZonesAreHiddenWhilePlayerAndScoreboardRemain() {
         prepare()
         val root="""<html><body>

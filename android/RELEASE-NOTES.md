@@ -1,4 +1,14 @@
-Android 1.8.36 preview
+Android 1.8.37 preview
+
+- Apply the selected Desktop classic design to Android settings, app dialogs and link menus: gold headings, blue switches, divided rows, consistent title bars and compact actions.
+- Replace passcode text inputs with an app-themed four-digit keypad at startup and in settings. Creating a code requires confirmation; changing it requires the current code and confirmation of the new code. Retain the failed-attempt cooldown.
+- Add separate Remove / Enter code settings actions. Removing a code requires confirmation and the current code.
+- Add Move left / Move right actions for saved links, preserving order across restarts and site-list refreshes without reloading panes.
+- Add labeled Name and URL fields to the temporary yellow-tab save popup. Validate edits and retain the current WebView/player when saving.
+- Remove Inattv's observed sponsored page-skin image through its ad container, preserving shared-CDN images and player frames.
+- Windows and macOS are unchanged.
+
+Previous Android improvements retained:
 
 - Remove TRGOALS' observed first-party mobile and desktop page-skin promotions, including the full-width image above the player.
 

@@ -145,35 +145,17 @@ class MainActivity : Activity() {
         if (!code.matches(Regex("[0-9]{4}"))) return false
         return java.security.MessageDigest.isEqual(digestPass(code, prefs.getString("passSalt", "")!!).toByteArray(), prefs.getString("passHash", "")!!.toByteArray())
     }
-    private fun unlock() {
-        val input = EditText(this).apply { inputType = 18; hint = "4-digit passcode" }
-        val dialog = ArenaDialog.Builder(this).setTitle("Football Arena").setMessage("Enter your passcode").setView(input).setCancelable(false).setPositiveButton("Unlock", null).create()
-        var tries = 0
-        dialog.setOnShowListener { dialog.getButton(-1).setOnClickListener {
-            if (verifyPass(input.text.toString())) { dialog.dismiss(); startSession() }
-            else { tries++; input.text.clear(); input.error = "Incorrect passcode"; if (tries % 5 == 0) { dialog.getButton(-1).isEnabled = false; input.postDelayed({ dialog.getButton(-1).isEnabled = true }, 30000) } }
-        } }; dialog.show()
-    }
-    private fun changePass() {
-        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), 0, dp(20), 0) }
-        val current = EditText(this).apply { hint = "Current code"; inputType = 18 }
-        val next = EditText(this).apply { hint = "New 4-digit code (blank removes it)"; inputType = 18 }
-        if (prefs.contains("passHash")) box.addView(current)
-        box.addView(next)
-        val d = ArenaDialog.Builder(this).setTitle("Passcode").setView(box).setNegativeButton("Cancel", null).setPositiveButton("Save", null).create()
-        d.setOnShowListener { d.getButton(-1).setOnClickListener {
-            if (prefs.contains("passHash") && !verifyPass(current.text.toString())) { current.error = "Incorrect code"; return@setOnClickListener }
-            val code = next.text.toString()
-            if (code.isNotEmpty() && !code.matches(Regex("[0-9]{4}"))) { next.error = "Use exactly four digits"; return@setOnClickListener }
-            val editor = prefs.edit()
-            if (code.isEmpty()) editor.remove("passSalt").remove("passHash") else {
-                val salt = ByteArray(16).apply { java.security.SecureRandom().nextBytes(this) }
-                val encoded = android.util.Base64.encodeToString(salt, 2)
-                editor.putString("passSalt", encoded).putString("passHash", digestPass(code, encoded))
-            }
-            editor.apply(); d.dismiss()
-        } }; d.show()
-    }
+    private fun unlock() = PinDialog(this,PinDialog.Mode.UNLOCK,::verifyPass) { startSession() }.apply { show() }
+    private fun changePass() = PinDialog(this,if(prefs.contains("passHash")) PinDialog.Mode.CHANGE else PinDialog.Mode.SET,::verifyPass) { code ->
+        if(code!=null){
+            val salt=android.util.Base64.encodeToString(ByteArray(16).apply {java.security.SecureRandom().nextBytes(this)},2)
+            prefs.edit().putString("passSalt",salt).putString("passHash",digestPass(code,salt)).apply()
+        }
+    }.apply { show() }
+    private fun removePass() = ArenaDialog.Builder(this).setTitle("App lock").setMessage("Remove the app lock? Verify your current password to continue.")
+        .setNegativeButton("Cancel",null).setPositiveButton("Verify and remove") { _,_ ->
+            PinDialog(this,PinDialog.Mode.REMOVE,::verifyPass) { prefs.edit().remove("passSalt").remove("passHash").apply() }.show()
+        }.show()
 
     private fun loadSites() {
         val saved = prefs.getString("sites", null)
@@ -182,6 +164,22 @@ class MainActivity : Activity() {
             try { decodeSites(JSONObject(assets.open("sites.json").bufferedReader().readText()).optJSONArray("sites") ?: JSONArray()).forEach { sites.add(it) } }
             catch (_: Exception) { }
         }
+        applySavedSiteOrder()
+    }
+
+    private fun applySavedSiteOrder() {
+        val order=runCatching { JSONArray(prefs.getString("siteOrder","[]")) }.getOrDefault(JSONArray())
+        val ranks=(0 until order.length()).associate { order.optString(it) to it }
+        sites.sortWith(compareBy { ranks[it.id] ?: Int.MAX_VALUE })
+    }
+    private fun moveSite(id:String,direction:Int) {
+        val site=sites.firstOrNull {it.id==id}?:return
+        val peers=sites.filter {it.quick==site.quick}
+        val target=peers.getOrNull(peers.indexOf(site)+direction)?:return
+        val from=sites.indexOf(site);val to=sites.indexOf(target)
+        java.util.Collections.swap(sites,from,to)
+        prefs.edit().putString("siteOrder",JSONArray(sites.map {it.id}).toString()).apply()
+        saveSites()
     }
 
     private fun decodeSites(a: JSONArray): List<Site> = (0 until a.length()).mapNotNull { i ->
@@ -574,13 +572,36 @@ class MainActivity : Activity() {
     }
     private fun saveTemporarySite(key: String, url: String): ArenaDialog? {
         if (sites.any { it.id == key }) return null
-        val name = EditText(this).apply { setText(android.net.Uri.parse(url).host ?: url); setSingleLine(true); setTextColor(this@MainActivity.text) }
-        return ArenaDialog.Builder(this).setTitle("Save site").setView(name).setNegativeButton("Cancel", null).setPositiveButton("Save") { _, _ ->
-            if (name.text.isNotBlank() && pages.containsKey(key)) {
-                val site = Site(key, name.text.toString().trim(), url, custom = true)
-                sites.add(site); pageSites[key] = site; saveSites(); renderSiteBar()
-            }
-        }.show()
+        val box=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL}
+        val name=siteInput(box,"Name",android.net.Uri.parse(url).host?:url,"saved-site-name")
+        val address=siteInput(box,"URL",url,"saved-site-url",true)
+        val dialog=ArenaDialog.Builder(this).setTitle("Save site").setMessage("Save this temporary tab to your site list.").setView(box).setNegativeButton("Cancel",null).setPositiveButton("Save",null).create()
+        dialog.setOnShowListener {dialog.getButton(-1).setOnClickListener {
+            val n=name.text.toString().trim();val u=validSiteUrl(address.text.toString())
+            if(n.isBlank()){name.error=AppStrings.t("Enter a site name");return@setOnClickListener}
+            if(u==null){address.error=AppStrings.t("Enter a valid HTTP or HTTPS address");return@setOnClickListener}
+            if(!pages.containsKey(key)){dialog.dismiss();return@setOnClickListener}
+            val site=Site(key,n.take(80),u,custom=true)
+            sites.add(site);pageSites[key]=site
+            automaticRoutes.registerSite(key,u)
+            saveSites();dialog.dismiss()
+            // Saving/editing metadata must not navigate or recreate a playing temporary pane.
+        }}
+        dialog.show();return dialog
+    }
+    private fun siteInput(box:LinearLayout,label:String,value:String,fieldTag:String,uri:Boolean=false):EditText {
+        box.addView(TextView(this).apply {text=AppStrings.t(label);textSize=13f;typeface=Typeface.DEFAULT_BOLD;setTextColor(ArenaStyle.text);setPadding(0,dp(4),0,dp(7))})
+        val field=EditText(this).apply {
+            tag=fieldTag;setText(value);setSingleLine(true);textSize=14f;setTextColor(ArenaStyle.text);setHintTextColor(ArenaStyle.muted)
+            inputType=if(uri) android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI else android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_WORDS
+            background=ArenaStyle.button(this@MainActivity);setPadding(dp(12),dp(10),dp(12),dp(10));contentDescription=AppStrings.t(label)
+        }
+        box.addView(field,LinearLayout.LayoutParams(-1,dp(46)).apply {bottomMargin=dp(13)})
+        return field
+    }
+    private fun validSiteUrl(raw:String):String? {
+        val value=raw.trim().let {if(it.contains("://"))it else "https://$it"}
+        return runCatching {val uri=java.net.URI(value);value.takeIf {uri.scheme in listOf("http","https")&&!uri.host.isNullOrBlank()&&uri.rawUserInfo==null}}.getOrNull()
     }
     private fun loadPage(page: WebView, url: String) {
         // Page ownership is assigned after createPage(); install its site rules before navigating.
@@ -677,36 +698,49 @@ class MainActivity : Activity() {
     private fun addSite() = siteDialog(null)
     private fun themedMenu(anchor: View?, title: String, entries: List<String>, choose: (Int) -> Unit) {
         if (anchor == null) { ArenaDialog.Builder(this).setTitle(title).setItems(entries.toTypedArray()) { _, n -> choose(n) }.setNegativeButton("Close", null).show(); return }
-        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(8), dp(8), dp(8), dp(8)); background = controlBackground(false) }
-        val popup = PopupWindow(ScrollView(this).apply { addView(box) }, dp(300), -2, true).apply { elevation = dp(12).toFloat(); setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)); isOutsideTouchable = true }
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(8), dp(8), dp(8), dp(8)); background = ArenaStyle.surface(this@MainActivity,12) }
+        val menuScroll=object:ScrollView(this){override fun onMeasure(w:Int,h:Int){super.onMeasure(w,View.MeasureSpec.makeMeasureSpec((resources.displayMetrics.heightPixels*.7f).toInt(),View.MeasureSpec.AT_MOST))}}.apply {addView(box)}
+        val popup = PopupWindow(menuScroll, minOf(dp(300),resources.displayMetrics.widthPixels-dp(24)), -2, true).apply { elevation = dp(12).toFloat(); setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)); isOutsideTouchable = true }
+        box.addView(TextView(this).apply {text=AppStrings.t(title);textSize=14f;typeface=Typeface.DEFAULT_BOLD;setTextColor(gold);setPadding(dp(12),dp(8),dp(12),dp(12))})
+        box.addView(View(this).apply {setBackgroundColor(ArenaStyle.line)},LinearLayout.LayoutParams(-1,dp(1)))
         if (entries.isEmpty()) box.addView(TextView(this).apply { text = AppStrings.t("Nothing here yet. Open a site’s ⋮ menu and choose Add to quick access."); setTextColor(this@MainActivity.text); setPadding(dp(12), dp(12), dp(12), dp(12)) })
-        entries.forEachIndexed { n, label -> box.addView(button(label) { popup.dismiss(); choose(n) }.apply { if (title == "Quick access") tag = "user-content" }, LinearLayout.LayoutParams(-1, dp(48))) }
+        entries.forEachIndexed { n, label -> box.addView(button(label) { popup.dismiss(); choose(n) }.apply {
+            if (title == "Quick access") tag = "user-content"
+            gravity=Gravity.START or Gravity.CENTER_VERTICAL;textSize=14f;setPadding(dp(12),0,dp(12),0)
+            background=ArenaStyle.button(this@MainActivity,danger=label=="Delete");if(label=="Delete")setTextColor(ArenaStyle.red)
+        }, LinearLayout.LayoutParams(-1, dp(46)).apply {topMargin=dp(5)}) }
         AppStrings.watch(box); popup.showAsDropDown(anchor, 0, dp(6))
     }
     private fun editSite(s: Site, anchor: View? = null) {
-        themedMenu(anchor, s.name, listOf("Open", "Edit", "Delete", if (s.quick) "Remove from quick access" else "Add to quick access")) { which ->
+        val peers=sites.filter {it.quick==s.quick};val position=peers.indexOfFirst {it.id==s.id}
+        val entries=mutableListOf("Open","Edit","Delete",if(s.quick) "Remove from quick access" else "Add to quick access")
+        if(position>0)entries.add("Move left")
+        if(position>=0&&position<peers.lastIndex)entries.add("Move right")
+        themedMenu(anchor, s.name, entries) { which ->
             when(which) {
                 0 -> openSite(s)
                 1 -> siteDialog(s)
                 2 -> ArenaDialog.Builder(this).setMessage("Delete ${s.name}?").setNegativeButton("Cancel", null).setPositiveButton("Delete") { _, _ -> sites.remove(s); prefs.edit().putStringSet("deleted", (prefs.getStringSet("deleted", emptySet())!! + s.id).toSet()).apply(); if (pages.containsKey(s.id)) { selectedKey = s.id; closePane() }; saveSites() }.show()
                 3 -> { val i = sites.indexOf(s); if (i >= 0) sites[i] = s.copy(quick = !s.quick, custom = true); saveSites() }
+                else -> moveSite(s.id,if(entries[which]=="Move left") -1 else 1)
             }
         }
     }
 
 
     private fun siteDialog(old: Site?) {
-        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(22), dp(8), dp(22), 0) }
-        val name = EditText(this).apply { hint = "Site name"; setText(old?.name ?: ""); setSingleLine(true) }
-        val url = EditText(this).apply { hint = "https://example.com"; setText(old?.url ?: "https://"); setSingleLine(true); inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI }
-        box.addView(name); box.addView(url)
-        ArenaDialog.Builder(this).setTitle(if (old == null) "Add site" else "Edit site").setView(box).setNegativeButton("Cancel", null).setPositiveButton("Save") { _, _ ->
-            val n = name.text.toString().trim(); var u = url.text.toString().trim(); if (!u.startsWith("http://") && !u.startsWith("https://")) u = "https://$u"
-            if (n.isBlank() || !(u.startsWith("https://") || u.startsWith("http://"))) { toast("Enter a name and a valid web address"); return@setPositiveButton }
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val name=siteInput(box,"Name",old?.name?:"","site-name")
+        val url=siteInput(box,"URL",old?.url?:"https://","site-url",true)
+        val dialog=ArenaDialog.Builder(this).setTitle(if (old == null) "Add site" else "Edit site").setView(box).setNegativeButton("Cancel", null).setPositiveButton("Save",null).create()
+        dialog.setOnShowListener {dialog.getButton(-1).setOnClickListener {
+            val n = name.text.toString().trim();val u=validSiteUrl(url.text.toString())
+            if(n.isBlank()){name.error=AppStrings.t("Enter a site name");return@setOnClickListener}
+            if(u==null){url.error=AppStrings.t("Enter a valid HTTP or HTTPS address");return@setOnClickListener}
             if (old == null) sites.add(Site("custom-${System.currentTimeMillis()}", n.take(40), u, custom = true))
             else { val i = sites.indexOf(old); if (i >= 0) sites[i] = old.copy(name = n.take(40), url = u, custom = true) }
-            saveSites()
-        }.show()
+            saveSites();dialog.dismiss()
+        }};dialog.show()
     }
 
     private fun refreshLinks(manual: Boolean) {
@@ -722,7 +756,7 @@ class MainActivity : Activity() {
                     val custom = sites.filter { it.custom }
                     val deleted = prefs.getStringSet("deleted", emptySet())!!
                     sites.clear(); sites.addAll(remote.filter { it.id !in deleted && custom.none { c -> c.id == it.id } }); custom.forEach { u -> if (sites.none { it.url == u.url }) sites.add(u) }
-                    saveSites(); status.text = if (manual) "Site list updated" else "Ready"; if (manual) ArenaDialog.Builder(this).setTitle("Link updates").setMessage("Site list updated").setPositiveButton("OK", null).show()
+                    applySavedSiteOrder();saveSites(); status.text = if (manual) "Site list updated" else "Ready"; if (manual) ArenaDialog.Builder(this).setTitle("Link updates").setMessage("Site list updated").setPositiveButton("OK", null).show()
                 }
             } catch (_: Exception) { runOnUiThread { if (manual) { status.text = "Could not update site list · using saved sites"; ArenaDialog.Builder(this).setTitle("Link updates").setMessage("Could not update site list · using saved sites").setPositiveButton("OK", null).show() } } }
         }
@@ -898,7 +932,7 @@ class MainActivity : Activity() {
         val dialog = android.app.Dialog(this)
         val shell = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; tag = "settings-shell"
-            background = android.graphics.drawable.GradientDrawable().apply { setColor(panel); cornerRadius = dp(14).toFloat(); setStroke(dp(1), Color.rgb(39,54,73)) }
+            background = ArenaStyle.surface(this@MainActivity)
             clipToOutline = true
         }
         val head = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(20), dp(8), dp(14), dp(8)); setBackgroundColor(Color.rgb(24,34,47)) }
@@ -908,36 +942,59 @@ class MainActivity : Activity() {
         shell.addView(body, LinearLayout.LayoutParams(-1, 0, 1f))
         val tabs = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(8), dp(12), dp(8), dp(8)); setBackgroundColor(bg); tag = "settings-sidebar" }
         body.addView(ScrollView(this).apply { setBackgroundColor(bg); isFillViewport = true; addView(tabs) }, LinearLayout.LayoutParams(dp(if (resources.configuration.screenWidthDp < 600) 112 else 176), -1))
-        val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(16), dp(20), dp(16)) }
+        val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(22), dp(18), dp(22), dp(22)) }
         val scroll = ScrollView(this).apply { addView(content); isFillViewport = true }
         body.addView(scroll, LinearLayout.LayoutParams(0, -1, 1f))
         var dpiSwitch: Switch? = null
+        var refreshSettings:()->Unit={}
         val routingListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             if (key == "dpiMode") dpiSwitch?.isChecked = routingMode() != "off"
+            if(key=="passHash")refreshSettings()
         }
         prefs.registerOnSharedPreferenceChangeListener(routingListener)
         dialog.setOnDismissListener { prefs.unregisterOnSharedPreferenceChangeListener(routingListener) }
         fun heading(label: String, description: String) {
             content.addView(TextView(this).apply { text = AppStrings.t(label).uppercase(); textSize = 17f; typeface = brandTypeface; setTextColor(gold); setPadding(0, 0, 0, dp(6)) })
-            if (description.isNotBlank()) content.addView(TextView(this).apply { text = description; textSize = 13f; setTextColor(Color.rgb(134,150,168)); setPadding(0, 0, 0, dp(14)) })
+            if (description.isNotBlank()) content.addView(TextView(this).apply { text = description; textSize = 13f; setTextColor(ArenaStyle.muted); setPadding(0, 0, 0, dp(14)) })
         }
-        fun row(label: String, description: String, key: String? = null, default: Boolean = false, action: (() -> Unit)? = null) {
-            val row = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(12), 0, dp(12)) }
+        fun settingButton(label:String,primary:Boolean=false,danger:Boolean=false,action:()->Unit)=Button(this).apply {
+            text=AppStrings.t(label);isAllCaps=false;textSize=13f;typeface=Typeface.DEFAULT_BOLD;setTextColor(if(danger) ArenaStyle.red else if(primary) bg else this@MainActivity.text)
+            minWidth=0;minimumWidth=0;setPadding(dp(13),0,dp(13),0);background=ArenaStyle.button(this@MainActivity,primary,danger)
+            layoutParams=LinearLayout.LayoutParams(-2,dp(42)).apply {marginStart=dp(7)};setOnClickListener {action()}
+        }
+        fun row(label: String, description: String, key: String? = null, default: Boolean = false, actionLabel:String?=null, action: (() -> Unit)? = null) {
+            val narrow=resources.configuration.screenWidthDp<600 && key==null
+            val row = LinearLayout(this).apply { orientation=if(narrow) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL;gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(15), 0, dp(15)) }
             val labels = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 0, dp(10), 0) }
             labels.addView(TextView(this).apply { text = label; textSize = 14f; typeface = Typeface.DEFAULT_BOLD; setTextColor(this@MainActivity.text) })
-            if (description.isNotBlank()) labels.addView(TextView(this).apply { text = description; textSize = 12f; setPadding(0, dp(4), 0, 0); setTextColor(Color.rgb(134,150,168)) })
-            row.addView(labels, LinearLayout.LayoutParams(0, -2, 1f))
+            if (description.isNotBlank()) labels.addView(TextView(this).apply { text = description; textSize = 12f; setPadding(0, dp(4), 0, 0); setTextColor(ArenaStyle.muted) })
+            row.addView(labels, if(narrow) LinearLayout.LayoutParams(-1,-2) else LinearLayout.LayoutParams(0, -2, 1f))
             if (key != null) row.addView(Switch(this).apply {
                 contentDescription = label; isChecked = if (key == "dpi") routingMode() != "off" else prefs.getBoolean(key, default)
                 if (key == "dpi") { dpiSwitch = this; tag = "dpi-settings-switch" }
-                thumbTintList = android.content.res.ColorStateList(arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()), intArrayOf(gold, Color.rgb(175,186,199)))
-                trackTintList = android.content.res.ColorStateList(arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()), intArrayOf(Color.rgb(126,100,44), Color.rgb(57,68,82)))
+                thumbTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+                trackTintList = android.content.res.ColorStateList(arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()), intArrayOf(ArenaStyle.blue, Color.rgb(57,68,82)))
                 setOnCheckedChangeListener { _, on ->
                     if (key == "dpi") setDpiEnabled(on) else prefs.edit().putBoolean(key, on).apply()
                     if (key == "focusAudio") applyAudio()
                     if (key == "autoskip" || key == "adblock") pages.values.forEach { installContentScript(it); runAutoSkip(it) }
                 }
-            }) else row.addView(headerButton(if (label == "Language") "Türkçe / English  ⌄" else label) { action?.invoke() }.apply { maxWidth = dp(if (resources.configuration.screenWidthDp < 600) 100 else 190) })
+            }) else {
+                val actions=LinearLayout(this).apply {gravity=Gravity.CENTER_VERTICAL;setPadding(0,if(narrow)dp(10)else 0,0,0)}
+                when(label){
+                    "Passcode"->{
+                        if(prefs.contains("passHash")){
+                            if(!narrow)actions.addView(TextView(this).apply {text=AppStrings.t("Active");textSize=11f;setTextColor(ArenaStyle.green);setPadding(dp(7),dp(4),dp(7),dp(4));background=android.graphics.drawable.GradientDrawable().apply {setColor(Color.rgb(24,55,45));cornerRadius=dp(5).toFloat()}})
+                            actions.addView(settingButton("Remove",danger=true){removePass()}.apply {tag="remove-passcode"})
+                        }
+                        actions.addView(settingButton("Enter code",primary=true){changePass()}.apply {tag="enter-passcode"})
+                    }
+                    "Site list transfer"->{actions.addView(settingButton("Export"){documentPicker(true)});actions.addView(settingButton("Import"){documentPicker(false)})}
+                    "Version"->actions.addView(TextView(this).apply {text=packageManager.getPackageInfo(packageName,0).versionName;textSize=12f;setTextColor(ArenaStyle.muted);tag="user-content"})
+                    else->actions.addView(settingButton(actionLabel?:if(label=="Language") (if(AppStrings.language=="tr") "Türkçe  ⌄" else "English  ⌄") else label){action?.invoke()})
+                }
+                row.addView(actions)
+            }
             content.addView(row, LinearLayout.LayoutParams(-1, -2))
             content.addView(View(this).apply { setBackgroundColor(Color.rgb(34,48,66)) }, LinearLayout.LayoutParams(-1, dp(1)))
         }
@@ -950,39 +1007,44 @@ class MainActivity : Activity() {
             }
             when (n) {
                 0 -> {
-                    heading("App", "Football Arena · ${packageManager.getPackageInfo(packageName, 0).versionName}")
-                    row("Language", "Türkçe / English", action = { dialog.dismiss(); languageDialog() })
-                    row("Restore session", "Remember the last page and layout.", "restore", true)
-                    row("Passcode", "Ask for a four-digit code when the app starts.", action = { changePass() })
-                    row("Export sites", "Save a JSON file compatible with the desktop app.", action = { documentPicker(true) })
-                    row("Import sites", "Add sites from a saved JSON file.", action = { documentPicker(false) })
-                    row("Share current page", "", action = { sharePage() })
-                    row("Open current page in browser", "", action = { val url = browser.url; if (url != null && (url.startsWith("https://") || url.startsWith("http://"))) try { startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))) } catch (_: Exception) { toast("No external browser is installed") } })
+                    heading("Application", "")
+                    row("Language", "Choose the app display language.", action = { dialog.dismiss(); languageDialog() })
+                    row("Restore session", "Remember open sites and the pane layout.", "restore", true)
+                    row("Passcode", "Enter your four-digit password when the app starts.")
+                    heading("Site list", "")
+                    row("Site list transfer", "Save your sites or load a saved list.")
+                    heading("About", "")
+                    row("Version", "Football Arena · Android")
                 }
                 1 -> {
                     heading("Sound & Video", "Control audio for each open pane.")
                     row("Focused pane audio", "Only the selected pane plays sound.", "focusAudio")
-                    row("Pane volume", "Adjust volume and mute for the selected pane.", action = { volumeDialog(selectedKey) })
+                    row("Pane volume", "Adjust volume and mute for the selected pane.", actionLabel="Adjust volume",action = { volumeDialog(selectedKey) })
                 }
                 2 -> {
                     heading("Links", "Site addresses are shared with the desktop app.")
-                    row("Update site list", "Download the latest addresses from GitHub.", action = { refreshLinks(true) })
-                    row("Link health", "Check whether your saved sites can be reached.", action = { healthCheck() })
-                    row("Quick access", "Open the sites in your quick-access list.", action = { quickAccess() })
+                    row("Update site list", "Download the latest addresses from GitHub.",actionLabel="Update links", action = { refreshLinks(true) })
+                    row("Link health", "Check whether your saved sites can be reached.",actionLabel="Check", action = { healthCheck() })
+                    row("Quick access", "Open the sites in your quick-access list.",actionLabel="Open", action = { quickAccess() })
+                    row("Share current page", "",actionLabel="Share", action = { sharePage() })
+                    row("Open current page in browser", "",actionLabel="Open", action = { val url = browser.url; if (url != null && (url.startsWith("https://") || url.startsWith("http://"))) try { startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))) } catch (_: Exception) { toast("No external browser is installed") } })
                 }
                 3 -> {
                     heading("Network", "Automatic uses encrypted DNS for HTTPS pages and resources, and adapts TLS fragmentation when needed.")
                     row("DPI bypass", "Enable or disable DPI bypass for this app.", "dpi", true)
-                    row("Connection routing", "Learned routes expire after four hours or when the site address changes.", action = { routingModeDialog() })
-                    row("DPI options & diagnostics", "See routed connections, handshakes, errors, and fragment options.", action = { dpiMenu() })
+                    row("Connection routing", "Learned routes expire after four hours or when the site address changes.",actionLabel="Open", action = { routingModeDialog() })
+                    row("DPI options & diagnostics", "See routed connections, handshakes, errors, and fragment options.",actionLabel="View", action = { dpiMenu() })
                     row("Ad blocking", "Block known advertising hosts.", "adblock", true)
                     row("Auto-skip", "Attempt to skip supported video ads.", "autoskip", true)
-                    row("Ad blocking diagnostics", "Check blocking activity and embedded-player support.", action = { contentBlockingDiagnostics() })
+                    row("Ad blocking diagnostics", "Check blocking activity and embedded-player support.",actionLabel="View", action = { contentBlockingDiagnostics() })
                 }
             }
         }
         arrayOf("App", "Sound & Video", "Links", "Network").forEachIndexed { i, label -> tabs.addView(button(label) { section(i) }.apply { gravity = Gravity.CENTER_VERTICAL; textSize = 13f; setPadding(dp(12), 0, dp(8), 0) }, LinearLayout.LayoutParams(-1, dp(44)).apply { bottomMargin = dp(4) }) }
-        section(0); dialog.setContentView(shell); dialog.show()
+        refreshSettings={section(0)}
+        section(0)
+        shell.addView(TextView(this).apply {text="h o w l . d e v";tag="user-content";textSize=11f;setTextColor(ArenaStyle.muted);gravity=Gravity.END;setPadding(dp(22),dp(12),dp(22),dp(12));setBackgroundColor(Color.rgb(16,24,33))})
+        dialog.setContentView(shell); dialog.show()
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
         dialog.window?.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
         dialog.window?.setDimAmount(.65f)

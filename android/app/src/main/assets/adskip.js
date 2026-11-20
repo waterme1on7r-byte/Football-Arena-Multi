@@ -113,7 +113,7 @@
     if (siteId() === 'mahsunsports' || /(^|\.)mahsunsports\d*\./i.test(location.hostname)) {
       document.querySelectorAll('#openWheelBtn').forEach(hidePromotion);
     }
-    if (siteId() === 'trgoals' || /(^|\.)taraftarium\d*\./i.test(location.hostname)) {
+    if (siteId() === 'trgoals' || siteId() === 'inatbox' || /(^|\.)(?:taraftarium|inattv)\d*\./i.test(location.hostname)) {
       document.querySelectorAll('.pageskin-wrapper,.pageskin-mobile-wrapper').forEach(hidePromotion);
     }
     if (sportsLayout()) {
