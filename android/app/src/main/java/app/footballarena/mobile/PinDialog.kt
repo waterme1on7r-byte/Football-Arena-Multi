@@ -47,13 +47,13 @@ internal class PinDialog(
         setCancelable(mode!=Mode.UNLOCK)
         setCanceledOnTouchOutside(false)
         val compact=context.resources.displayMetrics.heightPixels/context.resources.displayMetrics.density<520 && context.resources.configuration.screenWidthDp>=500
-        val shell=LinearLayout(context).apply { orientation=LinearLayout.VERTICAL; background=ArenaStyle.surface(context);clipToOutline=true;isFocusableInTouchMode=true;tag="pin-dialog" }
+        val shell=LinearLayout(context).apply { orientation=LinearLayout.VERTICAL; background=ArenaStyle.surface(context);clipToOutline=true;isFocusable=false;isFocusableInTouchMode=false;tag="pin-dialog" }
         val header=LinearLayout(context).apply {gravity=Gravity.CENTER_VERTICAL;setPadding(dp(22),dp(if(compact)8 else 14),dp(16),dp(if(compact)8 else 14));setBackgroundColor(Color.rgb(25,36,49))}
         val brand=text("FOOTBALL ARENA",23f,ArenaStyle.gold).apply {typeface=Typeface.DEFAULT_BOLD;tag="user-content"}
         header.addView(brand,LinearLayout.LayoutParams(0,-2,1f))
         if(mode!=Mode.UNLOCK)header.addView(Button(context).apply {
             text="×";contentDescription=AppStrings.t("Close");textSize=24f;setTextColor(ArenaStyle.muted);background=ArenaStyle.button(context)
-            minWidth=0;minimumWidth=0;setPadding(0,0,0,0);setOnClickListener { dismiss() }
+            minWidth=0;minimumWidth=0;isFocusable=true;isFocusableInTouchMode=true;setPadding(0,0,0,0);setOnClickListener { dismiss() }
         },LinearLayout.LayoutParams(dp(40),dp(40)))
         shell.addView(header)
         shell.addView(View(context).apply {setBackgroundColor(ArenaStyle.line)},LinearLayout.LayoutParams(-1,dp(1)))
@@ -84,7 +84,7 @@ internal class PinDialog(
                 if(key.isBlank())line.addView(View(context),LinearLayout.LayoutParams(0,dp(50),1f)) else {
                     val b=Button(context).apply {
                         text=if(key=="delete") AppStrings.t("Delete digit") else key;tag="pin-key-$key";textSize=if(key=="delete") 14f else 22f
-                        isAllCaps=false;minHeight=0;minimumHeight=0;minWidth=0;minimumWidth=0;setPadding(0,0,0,0)
+                        isAllCaps=false;isFocusable=true;isFocusableInTouchMode=true;minHeight=0;minimumHeight=0;minWidth=0;minimumWidth=0;setPadding(0,0,0,0)
                         typeface=Typeface.DEFAULT;setTextColor(ArenaStyle.text);background=ArenaStyle.button(context,radius=10)
                         contentDescription=if(key=="delete") AppStrings.t("Delete last digit") else key
                         setOnClickListener { enter(key) }
@@ -99,7 +99,7 @@ internal class PinDialog(
         val footer=LinearLayout(context).apply {gravity=Gravity.CENTER_VERTICAL;setPadding(dp(22),dp(if(compact)8 else 12),dp(16),dp(if(compact)8 else 12));setBackgroundColor(Color.rgb(16,24,33))}
         footer.addView(text("h o w l . d e v",11f,ArenaStyle.muted).apply {tag="user-content"},LinearLayout.LayoutParams(0,-2,1f))
         if(mode!=Mode.UNLOCK)footer.addView(Button(context).apply {
-            text=AppStrings.t("Cancel");isAllCaps=false;setTextColor(ArenaStyle.muted);background=ArenaStyle.button(context);setPadding(dp(14),0,dp(14),0);setOnClickListener {dismiss()}
+            text=AppStrings.t("Cancel");isAllCaps=false;isFocusable=true;isFocusableInTouchMode=true;setTextColor(ArenaStyle.muted);background=ArenaStyle.button(context);setPadding(dp(14),0,dp(14),0);setOnClickListener {dismiss()}
         },LinearLayout.LayoutParams(-2,dp(40)))
         shell.addView(footer);setContentView(shell)
         window?.setBackgroundDrawableResource(android.R.color.transparent)

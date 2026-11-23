@@ -1,4 +1,9 @@
-Android 1.8.39 preview
+Android 1.8.40 preview
+
+- Fix Android TV remote navigation: reliably establish initial DPAD focus and make toolbar controls, site chips, settings tabs, switches, dialogs and the custom PIN keypad focusable from a remote.
+- Detect television form factors by Leanback feature or TV UI mode, including launchers that omit the optional Leanback capability.
+
+Previous Android improvements retained:
 
 - Apply the selected Desktop classic design to Android settings, app dialogs and link menus: gold headings, blue switches, divided rows, consistent title bars and compact actions.
 - Replace passcode text inputs with an app-themed four-digit keypad at startup and in settings. Creating a code requires confirmation; changing it requires the current code and confirmation of the new code. Retain the failed-attempt cooldown.

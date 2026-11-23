@@ -82,6 +82,7 @@ class MainActivity : Activity() {
         updateDpi(true)
     }
     private var leanback = false
+    private var tvFocusSeeded = false
     private val bg = Color.rgb(11, 15, 20)
     private val panel = Color.rgb(18, 25, 35)
     private val gold = Color.rgb(246, 196, 81)
@@ -93,7 +94,12 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         AppStrings.init(this)
         contentBlocker.installServiceWorkerBlocking()
-        leanback = packageManager.hasSystemFeature("android.software.leanback")
+        // Some TV launchers do not advertise the optional Leanback feature even though
+        // they send DPAD events.  Treat both forms as a TV so every control participates
+        // in remote focus navigation.
+        leanback = packageManager.hasSystemFeature("android.software.leanback") ||
+            packageManager.hasSystemFeature("android.software.leanback_only") ||
+            (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_TYPE_MASK) == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
         window.statusBarColor = bg
         window.navigationBarColor = bg
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
@@ -125,7 +131,8 @@ class MainActivity : Activity() {
                 if (firstLaunch) { if (prefs.contains("passHash")) unlock() else startSession() }
             }
         if (!firstLaunch) d.setNegativeButton("Cancel", null)
-        d.show()
+        val dialog = d.show()
+        if (leanback) dialog.window?.decorView?.post { choices.firstOrNull()?.requestFocus() }
     }
     private fun startSession() {
         updateDpi(false)
@@ -198,7 +205,11 @@ class MainActivity : Activity() {
     }
 
     private fun buildUi() {
-        root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(bg) }
+        root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; setBackgroundColor(bg)
+            descendantFocusability = android.view.ViewGroup.FOCUS_AFTER_DESCENDANTS
+            isFocusable = false; isFocusableInTouchMode = false
+        }
         if (android.os.Build.VERSION.SDK_INT >= 35) root.setOnApplyWindowInsetsListener { view, insets ->
             val bars = insets.getInsets(android.view.WindowInsets.Type.systemBars())
             view.setPadding(bars.left, bars.top, bars.right, bars.bottom); insets
@@ -242,7 +253,7 @@ class MainActivity : Activity() {
         siteRow.addView(scroll, LinearLayout.LayoutParams(0, dp(if (leanback) 52 else 44), 1f))
         quickButton = LinearLayout(this).apply {
             gravity = Gravity.CENTER; setPadding(dp(10), 0, dp(10), 0); background = tabBackground(true, false)
-            isClickable = true; isFocusable = true; setOnClickListener { quickAccess(it) }
+            isClickable = true; isFocusable = true; isFocusableInTouchMode = true; setOnClickListener { quickAccess(it) }
         }
         fun quickLabel(value: String, size: Float) = TextView(this).apply { text = value; setTextColor(Color.rgb(255,227,154)); textSize = size; gravity = Gravity.CENTER; typeface = Typeface.DEFAULT_BOLD }
         quickButton.addView(quickLabel("ϟ", 18f), LinearLayout.LayoutParams(dp(18), -1))
@@ -395,6 +406,23 @@ class MainActivity : Activity() {
         setContentView(root)
         AppStrings.watch(root)
         renderSiteBar()
+        if (leanback) root.post { seedTvFocus() }
+    }
+
+    /** Give a remote a real starting point.  Touch devices keep their normal focus behavior. */
+    private fun seedTvFocus() {
+        if (!leanback || tvFocusSeeded || isFinishing) return
+        val first = dpiButton.takeIf { it.isShown && it.isEnabled }
+            ?: findFocusable(root)
+        if (first?.requestFocus() == true) tvFocusSeeded = true
+    }
+
+    private fun findFocusable(view: View): View? {
+        if (view !== root && view.isShown && view.isEnabled && view.isFocusable) return view
+        if (view is android.view.ViewGroup) for (i in 0 until view.childCount) {
+            findFocusable(view.getChildAt(i))?.let { return it }
+        }
+        return null
     }
 
     private fun renderSiteBar() {
@@ -502,7 +530,7 @@ class MainActivity : Activity() {
             controls.addView(TextView(this).apply {
                 tag = "user-content"; text = pageSites[key]?.name ?: "Page"; setTextColor(gold); typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(12), 0, dp(12), 0); maxWidth = dp(160); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
-                isFocusable = true; setOnClickListener { selectedKey = key; browser = page; renderSiteBar(); applyAudio() }
+                isFocusable = true; isFocusableInTouchMode = true; setOnClickListener { selectedKey = key; browser = page; renderSiteBar(); applyAudio() }
             }, LinearLayout.LayoutParams(0, dp(42), 1f))
             val mainButton = button("▣", true) { mainPane = if (mainPane == key) "" else key; renderPages() }.apply { contentDescription = "Toggle main pane" }
             mainButtons[key] = mainButton; controls.addView(mainButton)
@@ -657,7 +685,7 @@ class MainActivity : Activity() {
         minHeight = 0; minimumHeight = 0; minWidth = 0; minimumWidth = 0
         val size = if (leanback) 48 else 40
         val inset = if (icon != null) dp((size - 20) / 2) else dp(10)
-        isFocusable = true; setOnClickListener { action(it) }; setPadding(inset, 0, inset, 0)
+        isFocusable = true; isFocusableInTouchMode = true; setOnClickListener { action(it) }; setPadding(inset, 0, inset, 0)
         val lp = LinearLayout.LayoutParams(if (icon != null) dp(size) else -2, dp(if (leanback) 48 else 42)); lp.marginStart = dp(3); lp.marginEnd = dp(3); layoutParams = lp
         }
     }
@@ -969,7 +997,7 @@ class MainActivity : Activity() {
         }
         fun settingButton(label:String,primary:Boolean=false,danger:Boolean=false,action:()->Unit)=Button(this).apply {
             text=AppStrings.t(label);isAllCaps=false;textSize=13f;typeface=Typeface.DEFAULT_BOLD;setTextColor(if(danger) ArenaStyle.red else if(primary) bg else this@MainActivity.text)
-            minWidth=0;minimumWidth=0;setPadding(dp(13),0,dp(13),0);background=ArenaStyle.button(this@MainActivity,primary,danger)
+            minWidth=0;minimumWidth=0;isFocusable=true;isFocusableInTouchMode=true;setPadding(dp(13),0,dp(13),0);background=ArenaStyle.button(this@MainActivity,primary,danger)
             layoutParams=LinearLayout.LayoutParams(-2,dp(42)).apply {marginStart=dp(7)};setOnClickListener {action()}
         }
         fun row(label: String, description: String, key: String? = null, default: Boolean = false, actionLabel:String?=null, action: (() -> Unit)? = null) {
@@ -980,7 +1008,7 @@ class MainActivity : Activity() {
             if (description.isNotBlank()) labels.addView(TextView(this).apply { text = description; textSize = 12f; setPadding(0, dp(4), 0, 0); setTextColor(ArenaStyle.muted) })
             row.addView(labels, if(narrow) LinearLayout.LayoutParams(-1,-2) else LinearLayout.LayoutParams(0, -2, 1f))
             if (key != null) row.addView(Switch(this).apply {
-                contentDescription = label; isChecked = if (key == "dpi") routingMode() != "off" else prefs.getBoolean(key, default)
+                contentDescription = label; isFocusable=true;isFocusableInTouchMode=true; isChecked = if (key == "dpi") routingMode() != "off" else prefs.getBoolean(key, default)
                 if (key == "dpi") { dpiSwitch = this; tag = "dpi-settings-switch" }
                 switchMinWidth=dp(42);splitTrack=false
                 thumbDrawable=android.graphics.drawable.GradientDrawable().apply {shape=android.graphics.drawable.GradientDrawable.OVAL;setColor(Color.WHITE);setSize(dp(20),dp(20))}
@@ -1063,6 +1091,7 @@ class MainActivity : Activity() {
         dialog.window?.setDimAmount(.65f)
         dialog.window?.setLayout(minOf(dp(920), resources.displayMetrics.widthPixels - dp(28)), minOf(dp(650), resources.displayMetrics.heightPixels - dp(48)))
         AppStrings.watch(shell)
+        if (leanback) shell.post { (tabs.getChildAt(0) as? Button)?.requestFocus() }
         return dialog
     }
     private fun configureBrowser(view: WebView) {
@@ -1157,6 +1186,20 @@ class MainActivity : Activity() {
             if (browser.canGoBack()) { browser.goBack(); return true }
         }
         return super.onKeyDown(keyCode, event)
+    }
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // Android TV can start an activity with no child focused.  Seed focus on
+        // the first remote press, then let Android's normal FocusFinder handle
+        // DPAD movement, Enter/OK and WebView controls.
+        if (leanback && event.action == KeyEvent.ACTION_DOWN && event.keyCode in setOf(
+                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
+                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT,
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER
+            ) && (currentFocus == null || !currentFocus!!.isShown)) {
+            seedTvFocus()
+            return true
+        }
+        return super.dispatchKeyEvent(event)
     }
     override fun onDestroy() { dpiProxy?.stop(); pages.values.distinct().forEach { it.destroy() }; if (pages.isEmpty() && ::browser.isInitialized) browser.destroy(); io.shutdownNow(); super.onDestroy() }
 }

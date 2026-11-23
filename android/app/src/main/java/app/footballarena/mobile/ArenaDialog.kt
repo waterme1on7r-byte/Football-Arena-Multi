@@ -19,6 +19,15 @@ class ArenaDialog(context:Context):Dialog(context) {
         window?.setLayout(minOf(ArenaStyle.dp(context,520),context.resources.displayMetrics.widthPixels-ArenaStyle.dp(context,28)),android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
         window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN or android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         window?.decorView?.let {AppStrings.watch(it)}
+        if (isTv()) window?.decorView?.post { firstFocusable(it)?.requestFocus() }
+    }
+    private fun isTv() = context.packageManager.hasSystemFeature("android.software.leanback") ||
+        context.packageManager.hasSystemFeature("android.software.leanback_only") ||
+        (context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_TYPE_MASK) == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+    private fun firstFocusable(view:View):View? {
+        if (view is Button && view.isShown && view.isEnabled) return view
+        if (view is android.view.ViewGroup) for(i in 0 until view.childCount) firstFocusable(view.getChildAt(i))?.let{return it}
+        return null
     }
     class Builder(private val context:Context){
         private var title=""
@@ -41,7 +50,11 @@ class ArenaDialog(context:Context):Dialog(context) {
         fun create():ArenaDialog {
             val dialog=ArenaDialog(context)
             fun dp(n:Int)=ArenaStyle.dp(context,n)
-            val shell=LinearLayout(context).apply {orientation=LinearLayout.VERTICAL;background=ArenaStyle.surface(context);clipToOutline=true;isFocusableInTouchMode=true}
+            val shell=LinearLayout(context).apply {
+                orientation=LinearLayout.VERTICAL;background=ArenaStyle.surface(context);clipToOutline=true
+                // A focusable shell swallows the first DPAD event on several TV launchers.
+                isFocusable=false;isFocusableInTouchMode=false
+            }
             val head=LinearLayout(context).apply {gravity=Gravity.CENTER_VERTICAL;setPadding(dp(22),dp(13),dp(12),dp(13));setBackgroundColor(Color.rgb(25,36,49));tag="dialog-titlebar"}
             head.addView(TextView(context).apply {
                 text=AppStrings.t(title.ifBlank {"Football Arena"});textSize=24f;setTextColor(ArenaStyle.gold)
@@ -50,7 +63,7 @@ class ArenaDialog(context:Context):Dialog(context) {
             },LinearLayout.LayoutParams(0,-2,1f))
             if(cancelable)head.addView(Button(context).apply {
                 text="×";textSize=23f;contentDescription=AppStrings.t("Close");isAllCaps=false
-                minWidth=0;minimumWidth=0;setPadding(0,0,0,0);setTextColor(ArenaStyle.muted);background=ArenaStyle.button(context)
+                minWidth=0;minimumWidth=0;isFocusable=true;isFocusableInTouchMode=true;setPadding(0,0,0,0);setTextColor(ArenaStyle.muted);background=ArenaStyle.button(context)
                 setOnClickListener {dialog.dismiss()}
             },LinearLayout.LayoutParams(dp(38),dp(38)))
             shell.addView(head)
@@ -65,7 +78,7 @@ class ArenaDialog(context:Context):Dialog(context) {
             items?.forEachIndexed {index,item->
                 body.addView(Button(context).apply {
                     text=AppStrings.t((if(choice==index) "●  " else "")+item);isAllCaps=false;gravity=Gravity.START or Gravity.CENTER_VERTICAL
-                    minWidth=0;minimumWidth=0;setPadding(dp(14),0,dp(14),0);textSize=14f
+                    minWidth=0;minimumWidth=0;isFocusable=true;isFocusableInTouchMode=true;setPadding(dp(14),0,dp(14),0);textSize=14f
                     setTextColor(if(choice==index) ArenaStyle.gold else ArenaStyle.text)
                     background=ArenaStyle.button(context,danger=item=="Delete"||item=="Remove")
                     setOnClickListener {choose?.invoke(dialog,index);if(choice == -2)dialog.dismiss()}
@@ -82,7 +95,7 @@ class ArenaDialog(context:Context):Dialog(context) {
             for((which,option)in listOf(-2 to negative,-1 to positive))if(option!=null){
                 val danger=option.first in listOf("Delete","Remove","Verify and remove")
                 val button=Button(context).apply {
-                    text=AppStrings.t(option.first);isAllCaps=false;minWidth=0;minimumWidth=0;setPadding(dp(15),0,dp(15),0);typeface=Typeface.DEFAULT_BOLD;textSize=13f
+                    text=AppStrings.t(option.first);isAllCaps=false;minWidth=0;minimumWidth=0;isFocusable=true;isFocusableInTouchMode=true;setPadding(dp(15),0,dp(15),0);typeface=Typeface.DEFAULT_BOLD;textSize=13f
                     setTextColor(if(danger) ArenaStyle.red else if(which == -1) ArenaStyle.background else ArenaStyle.text)
                     background=ArenaStyle.button(context,primary=which == -1,danger=danger)
                     setOnClickListener {option.second?.invoke(dialog,which);dialog.dismiss()}
