@@ -19,7 +19,9 @@ class ArenaDialog(context:Context):Dialog(context) {
         window?.setLayout(minOf(ArenaStyle.dp(context,520),context.resources.displayMetrics.widthPixels-ArenaStyle.dp(context,28)),android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
         window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN or android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         window?.decorView?.let {AppStrings.watch(it)}
-        if (isTv()) window?.decorView?.post { firstFocusable(it)?.requestFocus() }
+        if (isTv()) window?.decorView?.let { decor ->
+            decor.post { firstFocusable(decor)?.requestFocus() }
+        }
     }
     private fun isTv() = context.packageManager.hasSystemFeature("android.software.leanback") ||
         context.packageManager.hasSystemFeature("android.software.leanback_only") ||

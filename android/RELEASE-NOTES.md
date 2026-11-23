@@ -1,4 +1,4 @@
-Android 1.8.40 preview
+Android 1.8.41 preview
 
 - Fix Android TV remote navigation: reliably establish initial DPAD focus and make toolbar controls, site chips, settings tabs, switches, dialogs and the custom PIN keypad focusable from a remote.
 - Detect television form factors by Leanback feature or TV UI mode, including launchers that omit the optional Leanback capability.
